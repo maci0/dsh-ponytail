@@ -1,6 +1,6 @@
 {
   "name": "dsh-ponytail",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "Ponytail, lazy senior dev mode, for DeepSeek Harness: bundled skills, an always-on anti-over-engineering ruleset, and a Plugin configuration card.",
