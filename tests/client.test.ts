@@ -231,3 +231,31 @@ test('an unavailable namespace renders no trace of the card', () => {
   react.reset()
   assert.equal(component(), null)
 })
+
+test('no inline style mixes the border shorthand with a border longhand', () => {
+  const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
+  const { registered, react } = loadBundle(
+    { status: 'ready', value: { mode: 'lite' }, user: {}, writable: true },
+    calls,
+  )
+
+  const component = registered[0]?.component
+  assert.ok(component)
+  const open = expand(react, component)
+
+  // React clears a removed style key by setting it to '', so a longhand
+  // removed against a still-set shorthand decomposes the shorthand and the
+  // declaration is lost. Toggling between the two spellings is what blanked a
+  // deselected pill's border.
+  const longhands = ['borderColor', 'borderWidth', 'borderStyle', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft']
+  let checked = 0
+  for (const element of open) {
+    const style = element.props['style'] as Record<string, unknown> | undefined
+    if (style === undefined || !('border' in style)) continue
+    checked += 1
+    for (const longhand of longhands) {
+      assert.ok(!(longhand in style), `${element.type} sets both border and ${longhand}`)
+    }
+  }
+  assert.ok(checked >= 5, `expected the card and its four pills to declare a border, saw ${checked}`)
+})
