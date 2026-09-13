@@ -67,6 +67,9 @@ package it has just started to resolve is safest picked up from a clean boot.
 ### By hand, one profile
 
 ```sh
+# straight from GitHub
+dsh plugin --profile web add github:maci0/dsh-ponytail
+# or from a local checkout
 dsh plugin --profile web add /path/to/dsh-ponytail
 ```
 
