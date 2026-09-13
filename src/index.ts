@@ -207,7 +207,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   ctx.inject(['commands'], (scope) => {
     scope.commands.register({
       name: 'ponytail',
-      description: 'Set the ponytail level (lite, full, ultra, review, off) or report the current one.',
+      description: '✂ Set the ponytail level (lite, full, ultra, review, off) or report the current one.',
       input: { hint: 'lite | full | ultra | review | off' },
       handler: async (invocation) => handleModeCommand(invocation, activeMode, setMode),
     })
