@@ -39,6 +39,7 @@ import type {
   CommandInvocationLike,
   CommandResultLike,
   HostContext,
+  SessionMessageLike,
   SettingsServiceLike,
   ToolDefinitionLike,
 } from './host.ts'
@@ -134,6 +135,25 @@ export function apply(ctx: HostContext, config: Config = {}): void {
     return { previous, mode, changed: mode !== previous }
   }
 
+  /**
+   * Turn the level off because the human's own message was a deactivation
+   * command.
+   *
+   * The override is set before the settings write is awaited: the durable
+   * `user/message` event arrives before the turn's prompt is assembled, and
+   * awaiting the document would let that same turn assemble with the ruleset
+   * still injected — the one turn the user just asked to end. A committed
+   * document then becomes the source of truth again, so the card and the
+   * prompt cannot disagree.
+   */
+  const deactivateFromMessage = (): void => {
+    if (activeMode() === 'off') return
+    override = 'off'
+    void persist('off').then((persisted) => {
+      if (persisted) override = undefined
+    })
+  }
+
   ctx.inject(['settings'], (scope) => {
     settings = scope.settings
     settings.installSection(
@@ -183,6 +203,40 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       handler: async (invocation) => handleModeCommand(invocation, activeMode, setMode),
     })
   })
+
+  // "stop ponytail" / "normal mode" typed as an ordinary message, given the
+  // same effect as `/ponytail off`. The command path is unaffected: this only
+  // claims messages that are exactly the command and come from the human.
+  ctx.on('session/event', (_session, event) => {
+    if (event.type !== 'user/message') return
+    const text = userMessageText(event.data)
+    if (text === undefined || !isDeactivationCommand(text)) return
+    deactivateFromMessage()
+  })
+}
+
+/**
+ * Read the plain text of a genuine user message.
+ *
+ * Injected context (skill bodies, file references, replayed history) rides the
+ * same event stream, so a message only counts when the harness marks it as the
+ * user's own; an injected instruction that happened to read "normal mode" must
+ * never toggle the level.
+ * @param data - the `user/message` event payload.
+ * @returns the concatenated text blocks, or `undefined` when this is not the
+ * human's own text.
+ */
+function userMessageText(data: unknown): string | undefined {
+  if (data === null || typeof data !== 'object') return undefined
+
+  const message = data as SessionMessageLike
+  if (message.source?.kind !== 'user') return undefined
+  if (!Array.isArray(message.content)) return undefined
+
+  const text = message.content
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join('\n')
+  return text.trim() === '' ? undefined : text
 }
 
 /**

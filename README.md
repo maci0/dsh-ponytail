@@ -8,9 +8,11 @@ Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytai
 | Capability | Extension point | Effect |
 |---|---|---|
 | Always-on ruleset | `ctx.systemPrompt.section()` | While a level other than `off` is active, the mode-filtered ponytail ruleset is part of every request. |
-| Six skills | `ctx.skills.registerProvider()` | `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help` load through the `skill` tool. |
-| Level control | `ctx.tools.register()` + `ctx.commands.register()` | The model calls the `ponytail` tool; the human types `/ponytail [lite\|full\|ultra\|review\|off]`. |
+| Six skills | `ctx.skills.registerProvider()` | `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help` load through the `skill` tool — and so appear as `/ponytail-review`, `/ponytail-audit`, … in the composer, which is DSH's own command surface for user-invocable skills. |
+| Level control | `ctx.tools.register()` + `ctx.commands.register()` + `ctx.on('session/event')` | The model calls the `ponytail` tool; the human types `/ponytail [lite\|full\|ultra\|review\|off]` or just says **stop ponytail** / **normal mode**. |
 | Settings card | `ctx.settings.installSection()` + `settings.plugin.item` | A **Ponytail** card in Settings → Plugins → **Plugin configuration**, collapsed like the shipped cards and expanding to an Off/Lite/Full/Ultra picker. |
+| Composer chip | `conversation.input.left` | A read-only level chip in the composer tool row, so the active level is visible without opening Settings. Hidden while the level is `off`. |
+| Localized copy | `ctx.locale.register()` | The card and the chip ship `en` + `zh` dictionaries under the `ponytail` locale namespace. |
 
 ## The ladder
 
@@ -38,10 +40,27 @@ data-loss handling, security, and accessibility are never on the chopping block.
 | `off` | No injection. Normal behavior. | yes |
 
 The four persistable levels live in the `ponytail` settings namespace
-(`~/.dsh/settings.yaml`), so the card, the tool, and `/ponytail` all agree and
-the choice survives a restart. `review` is session-only because it is a review
-mode, not a level a deployment should start in; the tool and `/ponytail` still
-accept it.
+(`~/.dsh/settings.yaml`), so the card, the chip, the tool, and `/ponytail` all
+agree and the choice survives a restart. `review` is session-only because it is
+a review mode, not a level a deployment should start in; the tool and
+`/ponytail` still accept it.
+
+### Switching from a message
+
+`/ponytail full` is a command. Typing **stop ponytail** or **normal mode** as an
+ordinary message is picked up from the durable `user/message` event, which
+arrives before the turn's prompt is assembled — so the turn that carried the
+command already runs without the ruleset, rather than one turn later.
+
+Only the human's own words count. Injected context (a skill body, a file
+reference, replayed history) rides the same event stream and can never toggle
+the level, and the message must *be* the command: "add a normal mode toggle" is
+left alone.
+
+One deliberate difference from upstream, which clears only the session mode:
+this writes the same `off` that `/ponytail off` writes, because in DSH the level
+*is* the persisted preference and a session-only override would leave the card
+and the chip reporting something the prompt does not do.
 
 ## Install
 
@@ -91,7 +110,10 @@ After a restart of the profile and a **page refresh** of the Web client:
 
 - Settings → Plugins → **Plugin configuration** shows the Ponytail card;
 - the `skill` tool's catalog lists the six ponytail skills;
-- `/ponytail` reports the current level in the composer.
+- the composer tool row shows a `Ponytail: full` chip until the level is `off`;
+- `/ponytail` reports the current level in the composer;
+- sending exactly `stop ponytail` in a message turns the chip off and the next
+  request carries no ruleset.
 
 ## Configuration
 
@@ -105,12 +127,12 @@ the wrong thing.
 ## Layout
 
 ```
-src/index.ts        host plugin: section, provider, tool, command, settings namespace
+src/index.ts        host plugin: section, provider, tool, command, message watcher, settings namespace
 src/modes.ts        levels, the mode filter, the injected ruleset, default resolution
 src/skills.ts       skills provider over skills/<name>/SKILL.md
 src/frontmatter.ts  minimal frontmatter reader (plain, `>`, `|`, quoted scalars)
 src/host.ts         structural declaration of the host surface
-lib/client.js       browser half: the Ponytail settings card (loader factory format)
+lib/client.js       browser half: the settings card + the composer chip (loader factory format)
 skills/             the six skills, verbatim from upstream
 tests/              node:test unit + fake-host integration coverage
 ```
@@ -127,15 +149,33 @@ npm test          # node --test tests/*.test.ts (Node >= 22.6, no build step)
 npm run typecheck # tsc --noEmit
 ```
 
+## Uninstall
+
+```sh
+dsh plugin --profile web remove dsh-ponytail
+```
+
+then delete the `- insert: … dsh-ponytail …` row from that profile's
+`cordis.patch.yml` and restart the profile. Removing the package alone leaves
+the row behind, and a row naming a package that no longer resolves fails the
+profile's boot.
+
 ## Limits
 
 - **A plugin source edit needs a profile restart.** The Loader imports plugin
   modules with ESM semantics, so a live patch reload re-runs `apply` from the
   module already in memory. Changing `index.ts` means restarting the profile.
+- **A browser-half edit needs a page refresh.** The client module system serves
+  `exports["./client"]` from the package, so the host half can stay up.
 - **The level is process-wide.** The ruleset is a global prompt section and the
   level is one namespace value, so every agent in the process shares it.
-- **One browser half, English copy.** The card renders its own chrome and labels
-  and registers no locale dictionary, so its text is not translated.
+- **Two locales.** The card and the chip ship `en` and `zh`; any other active
+  locale falls back through the service's own chain.
+- **External subagents are out of reach.** In-process children join the parent
+  composition and inherit the ruleset, but `subagent-claude-code` and
+  `subagent-codex` spawn their own CLI with its own system prompt, and no
+  harness extension point wraps a spawn. Upstream covers this with a
+  `SubagentStart` hook; DSH has the equivalent of no such hook to register.
 - **`emit` modes**: a level change is not announced as a session event; a
   replayed session shows the ruleset each request already carried.
 

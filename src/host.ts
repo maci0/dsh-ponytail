@@ -132,6 +132,36 @@ export interface CommandDefinitionLike {
   handler(invocation: CommandInvocationLike): CommandResultLike | Promise<CommandResultLike>
 }
 
+/** One content block on a message; the deactivation watcher only reads text. */
+export interface MessageContentLike {
+  /** Block discriminator, e.g. `text`, `image`. */
+  readonly type?: string
+  /** Text of a `text` block. */
+  readonly text?: string
+}
+
+/**
+ * The slice of a durable session message the deactivation watcher reads.
+ *
+ * `source.kind === 'user'` is what separates the human's own words from the
+ * context the harness injects into the same event stream (skill bodies,
+ * references, replayed history).
+ */
+export interface SessionMessageLike {
+  /** Message content blocks. */
+  readonly content?: readonly MessageContentLike[] | undefined
+  /** Provenance of the message. */
+  readonly source?: { readonly kind?: string } | undefined
+}
+
+/** One durable session event, as `session/event` delivers it. */
+export interface SessionEventLike {
+  /** Event discriminator, e.g. `user/message`. */
+  readonly type?: string
+  /** Event payload; a {@link SessionMessageLike} for `user/message`. */
+  readonly data?: unknown
+}
+
 /**
  * Structural view of the Cordis context the plugin uses.
  *
@@ -141,6 +171,11 @@ export interface CommandDefinitionLike {
 export interface HostContext {
   /** Run `callback` once the named services are available. */
   inject(dependencies: readonly string[], callback: (scope: HostContext) => void): unknown
+  /** Subscribe to a host event; the returned disposer removes the listener. */
+  on(
+    event: 'session/event',
+    listener: (session: unknown, event: SessionEventLike) => void,
+  ): Disposable
   readonly systemPrompt: {
     section(section: PromptSectionContribution): Disposable
   }

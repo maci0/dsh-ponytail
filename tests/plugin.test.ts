@@ -5,6 +5,7 @@ import type {
   CommandDefinitionLike,
   HostContext,
   PromptSectionContribution,
+  SessionEventLike,
   SettingsSectionHooksLike,
   SkillProviderLike,
   ToolDefinitionLike,
@@ -27,7 +28,11 @@ interface Captured {
 }
 
 /** A host that records registrations and emulates the settings document. */
-function createHost(options: { failUpdate?: boolean } = {}): { ctx: HostContext; captured: Captured } {
+function createHost(options: { failUpdate?: boolean } = {}): {
+  ctx: HostContext
+  captured: Captured
+  emit: (event: SessionEventLike) => void
+} {
   const captured: Captured = {
     sections: [], providers: [], tools: [], commands: [], installs: [], updates: [],
   }
@@ -81,13 +86,23 @@ function createHost(options: { failUpdate?: boolean } = {}): { ctx: HostContext;
     },
   }
 
+  const listeners: Array<(session: unknown, event: SessionEventLike) => void> = []
+
   const ctx = {
     ...services,
     inject: (_dependencies: readonly string[], callback: (scope: HostContext) => void): void => {
       callback(ctx as unknown as HostContext)
     },
+    on: (_event: string, listener: (session: unknown, event: SessionEventLike) => void): (() => void) => {
+      listeners.push(listener)
+      return () => {}
+    },
   }
-  return { ctx: ctx as unknown as HostContext, captured }
+  return {
+    ctx: ctx as unknown as HostContext,
+    captured,
+    emit: (event: SessionEventLike): void => { for (const listener of listeners) listener({}, event) },
+  }
 }
 
 function sectionText(section: PromptSectionContribution | undefined): string {
@@ -227,4 +242,73 @@ test('the tool renders its canonical value for the model', async () => {
 test('apply fails loudly on configuration it cannot honor', () => {
   const host = createHost()
   assert.throws(() => apply(host.ctx, { defaultMode: 'review' }), /defaultMode must be one of off, lite, full, ultra/)
+})
+
+/** Let the fire-and-forget settings write settle. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => { setTimeout(resolve, 0) })
+}
+
+/** One durable user message event carrying `text`. */
+function userEvent(text: string, kind = 'user'): SessionEventLike {
+  return { type: 'user/message', data: { source: { kind }, content: [{ type: 'text', text }] } }
+}
+
+test('a "stop ponytail" message turns the level off before the turn assembles', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full' })
+  assert.match(sectionText(host.captured.sections[0]), /level: full/)
+
+  host.emit(userEvent('stop ponytail'))
+
+  // Synchronous: the turn that carried the command already assembles without
+  // the ruleset, which is the whole point of watching the durable message.
+  assert.equal(sectionText(host.captured.sections[0]), '')
+
+  await settle()
+  assert.deepEqual(host.captured.updates, [
+    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'off' } },
+  ])
+  // The committed document, not the session-local override, now says off.
+  assert.equal(sectionText(host.captured.sections[0]), '')
+})
+
+test('"normal mode" works the same way', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'ultra' })
+
+  host.emit(userEvent('  Normal Mode! '))
+  assert.equal(sectionText(host.captured.sections[0]), '')
+
+  await settle()
+  assert.deepEqual(host.captured.updates, [
+    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'off' } },
+  ])
+})
+
+test('only the human\'s own words may deactivate', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full' })
+
+  // Injected context rides the same event stream: a skill body or reference
+  // that happens to read "normal mode" must not toggle the level.
+  host.emit(userEvent('normal mode', 'skill-invocation'))
+  // A message that merely mentions the phrase is not the command.
+  host.emit(userEvent('add a normal mode toggle'))
+  host.emit({ type: 'assistant/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'stop ponytail' }] } })
+  host.emit({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image' }] } })
+
+  await settle()
+  assert.deepEqual(host.captured.updates, [])
+  assert.match(sectionText(host.captured.sections[0]), /level: full/)
+})
+
+test('an already-off level is not written again', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'off' })
+
+  host.emit(userEvent('stop ponytail'))
+  await settle()
+
+  assert.deepEqual(host.captured.updates, [])
 })
