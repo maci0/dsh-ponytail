@@ -1,6 +1,6 @@
 {
   "name": "dsh-ponytail",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Ponytail, lazy senior dev mode, for DeepSeek Harness: bundled skills, an always-on anti-over-engineering ruleset, and a Plugin configuration card.",
@@ -11,6 +11,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -26,6 +29,7 @@
     "src",
     "lib",
     "skills",
+    "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],

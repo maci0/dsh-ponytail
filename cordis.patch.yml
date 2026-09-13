@@ -1,0 +1,19 @@
+# dsh-ponytail as a profile bundle layer.
+#
+# `dsh plugin --profile <profile> add dsh-ponytail` adds this package to that
+# profile's `dsh.profile.bundles`, and the boot then reads this file as that
+# layer's patch: one insert of the plugin row. `name` stays a bare package
+# specifier — the browser half is served by the client module system, which
+# resolves the Loader entry's package, reads its `dsh.client` manifest, and
+# serves `exports["./client"]`.
+#
+# Bundle layers compose once at boot (`apps/cli/src/profile-boot.ts` keeps them
+# as "the part below the user layers on a live reload"), so activating the
+# plugin needs a profile restart, unlike a row appended to the profile's own
+# patch file. Do NOT also add this row by hand: `insert` appends without
+# deduplicating ids, so two rows would register the plugin twice.
+- insert:
+    - id: ponytail
+      name: 'dsh-ponytail'
+      config:
+        defaultMode: full

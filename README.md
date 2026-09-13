@@ -68,7 +68,7 @@ schema with it):
 - **browser half** — `lib/client.js`, served by the client module system because
   the package declares `dsh.client` and exports `./client`.
 
-### Install one profile, by hand
+### Install
 
 ```sh
 # straight from GitHub
@@ -77,28 +77,19 @@ dsh plugin --profile web add github:maci0/dsh-ponytail
 dsh plugin --profile web add /path/to/dsh-ponytail
 ```
 
-then add this row to `~/.dsh/profiles/web/cordis.patch.yml`:
+That is the whole install. The package declares `dsh.bundle`, so `dsh plugin`
+adds it to the profile's `dsh.profile.bundles`, and the boot reads the plugin
+row from this package's own `cordis.patch.yml`. **Restart the profile**: a
+bundle list is composed at boot, so a running profile does not pick it up from
+a live patch reload.
 
-```yaml
-- insert:
-    - id: ponytail
-      name: 'dsh-ponytail'
-      config:
-        defaultMode: full
-```
+### Upgrading from 0.4.x or earlier
 
-`name` must stay the bare package specifier: the client module system resolves
-the Loader entry's package, reads its `dsh.client` manifest, and serves
-`exports["./client"]`.
-
-### Why not `dsh plugin add` as a bundle?
-
-The package deliberately does **not** declare `dsh.bundle`. `dsh plugin add`
-would then append `dsh-ponytail` to `dsh.profile.bundles`, and a bundle list is
-read at boot — a running profile would need a restart, and a profile that also
-kept the patch row would insert the plugin twice. A plain dependency plus the
-row applies on the next reload and stays idempotent. (`dsh plugin add` prints a
-`declares no dsh.bundle` warning for that reason; it is expected.)
+Those versions declared no bundle, so installing meant a dependency **plus** a
+row you pasted into `~/.dsh/profiles/<profile>/cordis.patch.yml`. Delete that
+row before restarting. `insert` appends entries without deduplicating ids, so a
+leftover row and the new bundle layer would both insert `id: ponytail` and
+register the plugin twice.
 
 ### Verify
 
@@ -129,6 +120,7 @@ src/skills.ts       skills provider over skills/<name>/SKILL.md
 src/frontmatter.ts  minimal frontmatter reader (plain, `>`, `|`, quoted scalars)
 src/host.ts         structural declaration of the host surface
 lib/client.js       browser half: the settings card + the composer chip (loader factory format)
+cordis.patch.yml    the bundle layer: the one plugin row the boot mounts
 skills/             the six skills, verbatim from upstream
 tests/              node:test unit + fake-host integration coverage
 ```
@@ -158,10 +150,8 @@ npm run typecheck # tsc --noEmit
 dsh plugin --profile web remove dsh-ponytail
 ```
 
-then delete the `- insert: … dsh-ponytail …` row from that profile's
-`cordis.patch.yml` and restart the profile. Removing the package alone leaves
-the row behind, and a row naming a package that no longer resolves fails the
-profile's boot.
+then restart the profile. The same reconcile pass that added the package to
+`dsh.profile.bundles` drops it again, so there is no row left behind.
 
 ## Limits
 
