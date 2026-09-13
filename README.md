@@ -53,18 +53,7 @@ schema with it):
 - **browser half** — `lib/client.js`, served by the client module system because
   the package declares `dsh.client` and exports `./client`.
 
-### Every profile at once
-
-```sh
-node scripts/install.mjs            # add --dry-run to preview
-```
-
-The script adds the package as a dependency of each profile and appends the
-plugin row to that profile's `cordis.patch.yml` (idempotently). Restart a
-profile that is already running: a profile's patch layer reloads live, but a
-package it has just started to resolve is safest picked up from a clean boot.
-
-### By hand, one profile
+### Install one profile, by hand
 
 ```sh
 # straight from GitHub
@@ -108,10 +97,7 @@ After a restart of the profile and a **page refresh** of the Web client:
 
 | Field | Default | Meaning |
 |---|---|---|
-| `defaultMode` | `PONYTAIL_DEFAULT_MODE`, then `~/.config/ponytail/config.json`, then `full` | The composition-layer level. The user's settings namespace overrides it. Must be `off`, `lite`, `full`, or `ultra`. |
-| `promptOrder` | `700` | System-prompt position of the ruleset (after the persona prefix, before tool guidance). |
-| `skillsDir` | this package's `skills/` | Skill directory override. |
-| `providerName` | `ponytail` | Provider name in the skill registry. |
+| `defaultMode` | `PONYTAIL_DEFAULT_MODE`, then `full` | The composition-layer level. The user's settings namespace overrides it. Must be `off`, `lite`, `full`, or `ultra`. |
 
 Invalid configuration fails while the plugin loads rather than silently doing
 the wrong thing.
@@ -126,7 +112,6 @@ src/frontmatter.ts  minimal frontmatter reader (plain, `>`, `|`, quoted scalars)
 src/host.ts         structural declaration of the host surface
 lib/client.js       browser half: the Ponytail settings card (loader factory format)
 skills/             the six skills, verbatim from upstream
-scripts/install.mjs wire the plugin into every profile
 tests/              node:test unit + fake-host integration coverage
 ```
 

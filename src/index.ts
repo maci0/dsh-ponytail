@@ -34,7 +34,7 @@ import {
   VALID_MODES,
   type PonytailMode,
 } from './modes.ts'
-import { createSkillProvider, DEFAULT_PROVIDER_NAME } from './skills.ts'
+import { createSkillProvider } from './skills.ts'
 import type {
   CommandInvocationLike,
   CommandResultLike,
@@ -71,14 +71,8 @@ export const PonytailSettings = z.object({
  * for browser-side rehydration.
  */
 export interface Config {
-  /** Startup level (`off`, `lite`, `full`, `ultra`). Defaults to `PONYTAIL_DEFAULT_MODE`, then the config file, then `full`. */
+  /** Startup level (`off`, `lite`, `full`, `ultra`). Defaults to `PONYTAIL_DEFAULT_MODE`, then `full`. */
   readonly defaultMode?: string
-  /** System-prompt position of the ruleset; lower is earlier. Defaults to 700. */
-  readonly promptOrder?: number
-  /** Skill directory override; defaults to this package's `skills/`. */
-  readonly skillsDir?: string
-  /** Provider name in the skill registry; defaults to `ponytail`. */
-  readonly providerName?: string
 }
 
 /** Default system-prompt position: after the persona prefix, before tool guidance. */
@@ -95,11 +89,11 @@ const SECTION_NAME = 'ponytail'
 export function apply(ctx: HostContext, config: Config = {}): void {
   validateConfig(config)
 
-  const skillsDir = config.skillsDir ?? defaultSkillsDir()
-  const promptOrder = config.promptOrder ?? DEFAULT_PROMPT_ORDER
-  const providerName = config.providerName ?? DEFAULT_PROVIDER_NAME
+  const skillsDir = defaultSkillsDir()
   const startup = resolveDefaultMode({ configured: config.defaultMode })
-  const skillBody = readIfPresent(join(skillsDir, 'ponytail', 'SKILL.md'))
+  // A missing body means a broken install: fail while loading rather than
+  // injecting a silently truncated ruleset.
+  const skillBody = readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')
 
   const warn = (message: string): void => {
     console.warn(`[ponytail] ${message}`)
@@ -164,7 +158,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   ctx.inject(['systemPrompt'], (scope) => {
     scope.systemPrompt.section({
       name: SECTION_NAME,
-      order: promptOrder,
+      order: DEFAULT_PROMPT_ORDER,
       // Evaluated at each assembly, so a level change lands on the next request.
       // `off` returns empty text, which assembly drops.
       text: () => buildModeInstructions({ mode: activeMode(), skillBody }),
@@ -172,8 +166,8 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   })
 
   ctx.inject(['skills'], (scope) => {
-    scope.skills.registerProvider((_control) =>
-      createSkillProvider({ skillsDir, providerName, onWarn: warn }),
+    scope.skills.registerProvider(() =>
+      createSkillProvider({ skillsDir, onWarn: warn }),
     )
   })
 
@@ -196,12 +190,6 @@ export function apply(ctx: HostContext, config: Config = {}): void {
  * @param config - the row configuration.
  */
 function validateConfig(config: Config): void {
-  if (config.promptOrder !== undefined && !Number.isFinite(config.promptOrder)) {
-    throw new Error('[ponytail] promptOrder must be a finite number')
-  }
-  if (config.skillsDir !== undefined && config.skillsDir.trim() === '') {
-    throw new Error('[ponytail] skillsDir must not be empty')
-  }
   if (config.defaultMode !== undefined && normalizeMode(config.defaultMode) === undefined) {
     throw new Error(
       `[ponytail] defaultMode must be one of ${RUNTIME_MODES.join(', ')}; got ${JSON.stringify(config.defaultMode)}`,
@@ -215,19 +203,6 @@ function validateConfig(config: Config): void {
  */
 function defaultSkillsDir(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
-}
-
-/**
- * Read a file, treating absence or unreadability as "not available".
- * @param path - file to read.
- * @returns the UTF-8 contents, or `undefined`.
- */
-function readIfPresent(path: string): string | undefined {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return undefined
-  }
 }
 
 /**

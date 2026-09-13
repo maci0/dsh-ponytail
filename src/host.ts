@@ -69,30 +69,14 @@ export interface SkillDefinitionLike extends SkillSummaryLike {
   readonly metadata?: Readonly<Record<string, unknown>>
 }
 
-/** Lifecycle capability borrowed by one provider registration. */
-export interface SkillProviderControlLike {
-  /** Aborts when the exact registration is disposed. */
-  readonly signal: AbortSignal
-  /** Invalidate completed catalogs while this registration stays active. */
-  readonly invalidate: () => void
-}
-
-/** Per-lookup context handed to a provider. */
-export interface SkillLookupOptionsLike {
-  /** Workspace selector for cwd-sensitive providers. */
-  readonly cwd?: string | undefined
-  /** Cancels discovery or loading for the current caller. */
-  readonly signal?: AbortSignal | undefined
-}
-
 /** One source of skills. */
 export interface SkillProviderLike {
   /** Unique provider name in the registry. */
   readonly name: string
-  /** List candidates for the current lookup; settle promptly on abort. */
-  list(options: SkillLookupOptionsLike): Promise<readonly SkillCandidateLike[]>
+  /** List candidates for the current lookup. */
+  list(): Promise<readonly SkillCandidateLike[]>
   /** Load a winning candidate's body, or `undefined` when it is gone. */
-  get(candidate: SkillCandidateLike, options: SkillLookupOptionsLike): Promise<SkillDefinitionLike | undefined>
+  get(candidate: SkillCandidateLike): Promise<SkillDefinitionLike | undefined>
 }
 
 /** Model-facing content block. */
@@ -111,12 +95,6 @@ export interface ToolOutputLike {
   render(args: unknown, value: unknown): ContentBlockLike[]
 }
 
-/** Immutable execution identity supplied to a tool body. */
-export interface ToolRunContextLike {
-  /** Cancellation signal the body must honor. */
-  readonly signal: AbortSignal
-}
-
 /** A registered tool: schema plus body. */
 export interface ToolDefinitionLike {
   /** Model-facing tool name. */
@@ -128,7 +106,7 @@ export interface ToolDefinitionLike {
   /** Canonical output declaration. */
   readonly output: ToolOutputLike
   /** Run one accepted call; the raw definition owns its input validation. */
-  execute(args: unknown, exec: ToolRunContextLike): Promise<unknown>
+  execute(args: unknown): Promise<unknown>
 }
 
 /** Invocation handed to a registered human command. */
@@ -167,7 +145,7 @@ export interface HostContext {
     section(section: PromptSectionContribution): Disposable
   }
   readonly skills: {
-    registerProvider(create: (control: SkillProviderControlLike) => SkillProviderLike): Disposable
+    registerProvider(create: () => SkillProviderLike): Disposable
   }
   readonly tools: {
     register(definition: ToolDefinitionLike): Disposable

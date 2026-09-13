@@ -3,11 +3,9 @@ import { test } from 'node:test'
 import {
   buildModeInstructions,
   filterSkillBodyForMode,
-  getFallbackInstructions,
   isDeactivationCommand,
   normalizeConfigMode,
   normalizeMode,
-  normalizePersistedMode,
   resolveDefaultMode,
 } from '../src/modes.ts'
 
@@ -25,22 +23,12 @@ test('normalizeConfigMode additionally accepts the session-only review level', (
   assert.equal(normalizeConfigMode('shrug'), undefined)
 })
 
-test('normalizePersistedMode prefers runtime levels then config levels', () => {
-  assert.equal(normalizePersistedMode('lite'), 'lite')
-  assert.equal(normalizePersistedMode('review'), 'review')
-  assert.equal(normalizePersistedMode(null), undefined)
-})
-
-test('resolveDefaultMode prefers config, then env, then config file, then full', () => {
+test('resolveDefaultMode prefers config, then env, then full', () => {
   assert.equal(resolveDefaultMode({ configured: 'ultra', env: { PONYTAIL_DEFAULT_MODE: 'lite' } }), 'ultra')
   assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'lite' } }), 'lite')
-  assert.equal(
-    resolveDefaultMode({ env: {}, readFile: () => JSON.stringify({ defaultMode: 'off' }) }),
-    'off',
-  )
-  assert.equal(resolveDefaultMode({ env: {}, readFile: () => 'not json' }), 'full')
-  assert.equal(resolveDefaultMode({ env: {}, readFile: () => JSON.stringify({ defaultMode: 'review' }) }), 'full')
+  assert.equal(resolveDefaultMode({ env: {} }), 'full')
   assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'nonsense' } }), 'full')
+  assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'review' } }), 'full')
 })
 
 test('isDeactivationCommand requires the whole message to be the command', () => {
@@ -92,13 +80,4 @@ test('buildModeInstructions drops the ruleset when off and points at review', ()
   const full = buildModeInstructions({ mode: 'full', skillBody: '# The ladder\n\nstop at the first rung' })
   assert.match(full, /^PONYTAIL MODE ACTIVE — level: full\n\n# The ladder/)
   assert.match(full, /stop at the first rung$/)
-})
-
-test('buildModeInstructions falls back to the embedded ruleset without a body', () => {
-  const instructions = buildModeInstructions({ mode: 'lite', skillBody: undefined })
-  assert.equal(instructions, `PONYTAIL MODE ACTIVE — level: lite\n\n${getFallbackInstructions('lite')}`)
-  assert.match(instructions, /The ladder/)
-
-  const blank = buildModeInstructions({ mode: 'full', skillBody: '   \n' })
-  assert.match(blank, /The ladder/)
 })
