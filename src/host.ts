@@ -132,14 +132,6 @@ export interface CommandDefinitionLike {
   handler(invocation: CommandInvocationLike): CommandResultLike | Promise<CommandResultLike>
 }
 
-/** One content block on a message; the deactivation watcher only reads text. */
-export interface MessageContentLike {
-  /** Block discriminator, e.g. `text`, `image`. */
-  readonly type?: string
-  /** Text of a `text` block. */
-  readonly text?: string
-}
-
 /**
  * The slice of a durable session message the deactivation watcher reads.
  *
@@ -148,8 +140,8 @@ export interface MessageContentLike {
  * references, replayed history).
  */
 export interface SessionMessageLike {
-  /** Message content blocks. */
-  readonly content?: readonly MessageContentLike[] | undefined
+  /** Content blocks; only `text` blocks carry words. */
+  readonly content?: readonly { readonly type?: string; readonly text?: string }[] | undefined
   /** Provenance of the message. */
   readonly source?: { readonly kind?: string } | undefined
 }

@@ -142,6 +142,13 @@ a package's `exports["./client"]` artifact as a lazy-CJS factory registered on
 `window.__ModuleLoader__`; an out-of-tree plugin can author that directly
 instead of reproducing the repository's tsdown client preset.
 
+Its chrome is a stylesheet, not inline style objects. The factory appends one
+`<style>` tag while it materializes, which the module system claims for this
+package and removes on unload. That keeps every state change (card open, pill
+selected, disabled) out of React's inline-style diffing — a removed style key
+is cleared with an empty string, which decomposes a shorthand set alongside it,
+and that is what silently blanked a deselected pill's border in v0.3.1.
+
 ## Development
 
 ```sh

@@ -18,14 +18,12 @@ import type {
   SkillSummaryLike,
 } from './host.ts'
 
-/**
- * Rank matching a harness bundled skill (600), so a project-level or user-level
- * skill of the same name still wins the duplicate.
- */
+/** Rank matching a harness bundled skill (600), so a project-level or user-level
+ * skill of the same name still wins the duplicate. */
 export const BUNDLED_SKILL_RANK = 600
 
-/** Default provider name inside the skill registry. */
-export const DEFAULT_PROVIDER_NAME = 'ponytail'
+/** Provider name inside the skill registry. */
+const PROVIDER_NAME = 'ponytail'
 
 /** The grammar the registry enforces for skill names. */
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -53,12 +51,8 @@ export interface PonytailSkill {
 export interface SkillProviderOptions {
   /** Directory holding one subdirectory per skill. */
   readonly skillsDir: string
-  /** Provider name in the registry; defaults to {@link DEFAULT_PROVIDER_NAME}. */
-  readonly providerName?: string
   /** Receives non-fatal discovery problems instead of throwing. */
   readonly onWarn?: (message: string) => void
-  /** Duplicate-resolution rank; defaults to {@link BUNDLED_SKILL_RANK}. */
-  readonly rank?: number
 }
 
 /**
@@ -79,7 +73,7 @@ export async function discoverSkills(
   try {
     entries = await readdir(skillsDir, { withFileTypes: true })
   } catch (error) {
-    onWarn?.(`cannot read skills directory ${skillsDir}: ${describeError(error)}`)
+    onWarn?.(`cannot read skills directory ${skillsDir}: ${error instanceof Error ? error.message : String(error)}`)
     return []
   }
 
@@ -129,31 +123,28 @@ export async function discoverSkills(
 
 /**
  * Build the provider the skill registry mounts.
- * @param options - skills directory, provider name, and rank.
+ * @param options - skills directory and the non-fatal problem sink.
  * @returns a provider whose candidates are summaries and whose bodies come from disk.
  */
 export function createSkillProvider(options: SkillProviderOptions): SkillProviderLike {
-  const providerName = options.providerName ?? DEFAULT_PROVIDER_NAME
-  const rank = options.rank ?? BUNDLED_SKILL_RANK
-
   const summaryOf = (skill: PonytailSkill): SkillSummaryLike => ({
     path: skill.path,
     name: skill.name,
     description: skill.description,
     invocation: { modelInvocable: true, userInvocable: true },
     source: 'bundled',
-    provider: providerName,
+    provider: PROVIDER_NAME,
     resourceBase: { kind: 'directory', path: skill.directory },
   })
 
   return {
-    name: providerName,
+    name: PROVIDER_NAME,
 
     async list(): Promise<readonly SkillCandidateLike[]> {
       const skills = await discoverSkills(options.skillsDir, options.onWarn)
       return skills.map((skill) => ({
         ...summaryOf(skill),
-        rank,
+        rank: BUNDLED_SKILL_RANK,
         locator: skill.path,
         metadata: skill.metadata,
       }))
@@ -171,13 +162,4 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
       return { ...summaryOf(found), content: found.content, metadata: found.metadata }
     },
   }
-}
-
-/**
- * Render an unknown thrown value for a warning line.
- * @param error - caught value.
- * @returns a human-readable description.
- */
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

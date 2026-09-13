@@ -1,6 +1,6 @@
 {
   "name": "dsh-ponytail",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "Ponytail, lazy senior dev mode, for DeepSeek Harness: bundled skills, an always-on anti-over-engineering ruleset, and a Plugin configuration card.",
@@ -15,6 +15,7 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-settings-plugins"
@@ -40,6 +41,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-connection": "*",
+    "@deepseek-ai/dsh-client-locale": "*",
     "@deepseek-ai/dsh-client-ui-renderer": "*",
     "@deepseek-ai/dsh-client-ui-settings": "*",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "*"

@@ -121,7 +121,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       await settings.update(PONYTAIL_SETTINGS_NAMESPACE, { mode: next })
       return true
     } catch (error) {
-      warn(`could not persist level "${next}": ${describeError(error)}`)
+      warn(`could not persist level "${next}": ${error instanceof Error ? error.message : String(error)}`)
       return false
     }
   }
@@ -260,15 +260,6 @@ function defaultSkillsDir(): string {
 }
 
 /**
- * Render an unknown thrown value for a warning line.
- * @param error - caught value.
- * @returns a human-readable description.
- */
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/**
  * Build the model-facing level tool.
  * @param getMode - reads the active level.
  * @param setMode - applies and persists a level.
@@ -280,16 +271,12 @@ function createModeTool(
 ): ToolDefinitionLike {
   return {
     name: 'ponytail',
-    description: [
-      'Set or report the ponytail level, which governs how much code is written.',
-      'lite: build what was asked and name the lazier alternative in one line.',
-      'full (default): enforce the ladder — YAGNI, reuse, stdlib, native platform, installed dependency, one line, then the minimum that works.',
-      'ultra: challenge whether the requirement needs to exist before building it.',
-      'review: over-engineering-only review that lists what to delete.',
-      'off: deactivate and behave normally.',
-      'The level is persisted in the user settings document, so it survives a restart.',
-      'Call with no arguments to report the current level.',
-    ].join(' '),
+    // The `enum` below already names every level, and the injected ruleset
+    // explains what each one does; repeating both here only costs tokens.
+    description:
+      'Set or report the ponytail level, which governs how much code is written. '
+      + 'The level persists in the user settings document. '
+      + 'Call with no arguments to report the current level.',
     parameters: {
       type: 'object',
       properties: {
@@ -355,6 +342,21 @@ function readModeArgument(args: unknown): PonytailMode | undefined {
 }
 
 /**
+ * Phrase one level outcome. Shared by the model-facing tool and the human
+ * command, which report the same three transitions.
+ * @param mode - the level now active.
+ * @param previous - the level before the call.
+ * @param changed - whether the call moved the level.
+ * @returns the sentence both surfaces start from.
+ */
+function modeSentence(mode: string, previous: string, changed: boolean): string {
+  if (!changed) return `Ponytail level: ${mode}.`
+  return mode === 'off'
+    ? `Ponytail off (was ${previous}). Normal behavior.`
+    : `Ponytail level: ${mode} (was ${previous}).`
+}
+
+/**
  * Render the canonical tool value for the model.
  * @param value - the canonical value returned by `execute`.
  * @returns model-facing prose.
@@ -366,13 +368,9 @@ function renderModeResult(value: unknown): string {
   const changed = record['changed'] === true
   const active = record['active'] === true
 
-  if (!changed) {
-    return active
-      ? `Ponytail level: ${mode}. The ruleset is injected into every request.`
-      : 'Ponytail is off. Normal behavior.'
-  }
-  if (!active) return `Ponytail off (was ${previous}). Normal behavior.`
-  return `Ponytail level: ${mode} (was ${previous}). The ruleset is injected into every request.`
+  if (!changed && !active) return 'Ponytail is off. Normal behavior.'
+  const sentence = modeSentence(mode, previous, changed)
+  return active ? `${sentence} The ruleset is injected into every request.` : sentence
 }
 
 /**
@@ -389,9 +387,7 @@ async function handleModeCommand(
 ): Promise<CommandResultLike> {
   const input = invocation.rawInput.trim().toLowerCase()
 
-  if (input === '') {
-    return { kind: 'success', text: `Ponytail level: ${getMode()}.` }
-  }
+  if (input === '') return { kind: 'success', text: modeSentence(getMode(), getMode(), false) }
 
   const requested = isDeactivationCommand(input) ? 'off' : normalizeConfigMode(input)
   if (requested === undefined) {
@@ -402,11 +398,5 @@ async function handleModeCommand(
   }
 
   const { previous, mode, changed } = await setMode(requested)
-  if (!changed) return { kind: 'success', text: `Ponytail level: ${mode}.` }
-  return {
-    kind: 'success',
-    text: mode === 'off'
-      ? `Ponytail off (was ${previous}). Normal behavior.`
-      : `Ponytail level: ${mode} (was ${previous}).`,
-  }
+  return { kind: 'success', text: modeSentence(mode, previous, changed) }
 }

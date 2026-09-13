@@ -260,31 +260,34 @@ test('an unavailable namespace renders no trace of the card', () => {
   assert.equal(component(), null)
 })
 
-test('no inline style mixes the border shorthand with a border longhand', () => {
+test('the chrome is class-based, so no state change goes through React style diffing', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'lite' }, user: {}, writable: true },
+    { status: 'ready', value: { mode: 'lite' }, user: { mode: 'lite' }, writable: true },
     calls,
   )
 
   const component = componentFor(registered, 'settings.plugin.item')
   const open = expand(react, component)
 
-  // React clears a removed style key by setting it to '', so a longhand
-  // removed against a still-set shorthand decomposes the shorthand and the
-  // declaration is lost. Toggling between the two spellings is what blanked a
-  // deselected pill's border.
-  const longhands = ['borderColor', 'borderWidth', 'borderStyle', 'borderTop', 'borderRight', 'borderBottom', 'borderLeft']
-  let checked = 0
+  // An inline object is what let a removed longhand decompose a border
+  // shorthand and blank a deselected pill; classes keep every state change out
+  // of React's style diffing.
   for (const element of open) {
-    const style = element.props['style'] as Record<string, unknown> | undefined
-    if (style === undefined || !('border' in style)) continue
-    checked += 1
-    for (const longhand of longhands) {
-      assert.ok(!(longhand in style), `${element.type} sets both border and ${longhand}`)
-    }
+    assert.equal(element.props['style'], undefined, `${element.type} carries an inline style`)
+    assert.equal(typeof element.props['className'], 'string', `${element.type} carries no class`)
   }
-  assert.ok(checked >= 5, `expected the card and its four pills to declare a border, saw ${checked}`)
+
+  assert.match(String(open.filter((element) => element.type === 'li')[0]?.props['className']), /dp-card-open/)
+
+  const pills = radios(open)
+  assert.equal(pills.length, 4)
+  const selected = pills.filter((pill) => pill.props['aria-checked'] === true)
+  assert.equal(selected.length, 1)
+  assert.equal(selected[0]?.props['className'], 'dp-pill dp-pill-selected')
+  for (const pill of pills.filter((candidate) => candidate.props['aria-checked'] === false)) {
+    assert.equal(pill.props['className'], 'dp-pill')
+  }
 })
 
 test('the composer chip states the level and vanishes when off or unavailable', () => {
@@ -297,6 +300,7 @@ test('the composer chip states the level and vanishes when off or unavailable', 
   const chip = render(active.react, componentFor(active.registered, 'conversation.input.left'))
   assert.equal(chip.length, 1)
   assert.equal(chip[0]?.type, 'span')
+  assert.equal(chip[0]?.props['className'], 'dp-chip')
   assert.equal(chip[0]?.children[0], 'Ponytail: Ultra')
 
   const off = loadBundle(
