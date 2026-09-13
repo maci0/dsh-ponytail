@@ -1,0 +1,17 @@
+# dsh-ponytail overlay for a DSH profile.
+#
+# Append this file's row to a profile's patch file
+# (~/.dsh/profiles/<profile>/cordis.patch.yml) after installing the package
+# into that profile (`dsh plugin --profile <profile> add /path/to/dsh-ponytail`).
+# `name` stays a bare package specifier: the browser half is served by the
+# client module system, which resolves the Loader entry's package, reads its
+# `dsh.client` manifest, and serves `exports["./client"]`.
+#
+# A profile with "patchReload": "live" (the shipped `web` profile) picks the row
+# up without a restart. `scripts/install.mjs` performs the install and row
+# insertion for every profile idempotently.
+- insert:
+    - id: ponytail
+      name: 'dsh-ponytail'
+      config:
+        defaultMode: full

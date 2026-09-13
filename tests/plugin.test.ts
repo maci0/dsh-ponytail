@@ -1,0 +1,237 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { apply, PONYTAIL_SETTINGS_NAMESPACE } from '../src/index.ts'
+import type {
+  CommandDefinitionLike,
+  HostContext,
+  PromptSectionContribution,
+  SettingsSectionHooksLike,
+  SkillProviderLike,
+  ToolDefinitionLike,
+} from '../src/host.ts'
+
+const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
+
+interface InstallRecord {
+  readonly namespace: string
+  readonly schema: unknown
+  readonly entry: unknown
+  readonly hooks: SettingsSectionHooksLike
+}
+
+interface Captured {
+  readonly sections: PromptSectionContribution[]
+  readonly providers: SkillProviderLike[]
+  readonly tools: ToolDefinitionLike[]
+  readonly commands: CommandDefinitionLike[]
+  readonly installs: InstallRecord[]
+  readonly updates: { namespace: string; patch: Record<string, unknown> }[]
+}
+
+/** A host that records registrations and emulates the settings document. */
+function createHost(options: { failUpdate?: boolean } = {}): { ctx: HostContext; captured: Captured } {
+  const captured: Captured = {
+    sections: [], providers: [], tools: [], commands: [], installs: [], updates: [],
+  }
+  let base: Record<string, unknown> = {}
+  let user: Record<string, unknown> = {}
+
+  const services = {
+    systemPrompt: {
+      section: (section: PromptSectionContribution): (() => void) => {
+        captured.sections.push(section)
+        return () => {}
+      },
+    },
+    skills: {
+      registerProvider: (create: (control: unknown) => SkillProviderLike): (() => void) => {
+        captured.providers.push(create({ signal: new AbortController().signal, invalidate: () => {} }))
+        return () => {}
+      },
+    },
+    tools: {
+      register: (tool: ToolDefinitionLike): (() => void) => {
+        captured.tools.push(tool)
+        return () => {}
+      },
+    },
+    commands: {
+      register: (command: CommandDefinitionLike): (() => void) => {
+        captured.commands.push(command)
+        return () => {}
+      },
+    },
+    settings: {
+      installSection: (
+        _owner: unknown,
+        namespace: string,
+        schema: unknown,
+        entry: unknown,
+        hooks: SettingsSectionHooksLike,
+      ): void => {
+        base = entry as Record<string, unknown>
+        captured.installs.push({ namespace, schema, entry, hooks })
+        // The real service hands over a thunk reading the resolved layers.
+        hooks.setSource(() => ({ ...base, ...user }))
+        hooks.onChange()
+      },
+      update: async (namespace: string, patch: Record<string, unknown>): Promise<void> => {
+        if (options.failUpdate === true) throw new Error('settings document is read-only')
+        captured.updates.push({ namespace, patch })
+        user = { ...user, ...patch }
+      },
+    },
+  }
+
+  const ctx = {
+    ...services,
+    inject: (_dependencies: readonly string[], callback: (scope: HostContext) => void): void => {
+      callback(ctx as unknown as HostContext)
+    },
+  }
+  return { ctx: ctx as unknown as HostContext, captured }
+}
+
+function sectionText(section: PromptSectionContribution | undefined): string {
+  assert.ok(section)
+  return typeof section.text === 'function' ? section.text({}) : section.text
+}
+
+async function callTool(host: { captured: Captured }, args: unknown): Promise<unknown> {
+  const tool = host.captured.tools[0]
+  assert.ok(tool)
+  return tool.execute(args, { signal: new AbortController().signal })
+}
+
+async function callCommand(host: { captured: Captured }, rawInput: string) {
+  const command = host.captured.commands[0]
+  assert.ok(command)
+  return command.handler({ rawInput })
+}
+
+test('apply mounts the section, provider, tool, command, and settings namespace', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full', skillsDir })
+
+  assert.equal(host.captured.sections[0]?.name, 'ponytail')
+  assert.equal(host.captured.sections[0]?.order, 700)
+  assert.equal(host.captured.tools[0]?.name, 'ponytail')
+  assert.equal(host.captured.commands[0]?.name, 'ponytail')
+  assert.equal(host.captured.providers.length, 1)
+  assert.equal((await host.captured.providers[0]?.list({}))?.length, 6)
+
+  const install = host.captured.installs[0]
+  assert.ok(install)
+  assert.equal(install.namespace, PONYTAIL_SETTINGS_NAMESPACE)
+  assert.deepEqual(install.entry, { mode: 'full' })
+  // The settings service serializes `schema.toJSON()` for the browser half, so
+  // the namespace must carry a real schemastery schema.
+  assert.equal(typeof (install.schema as { toJSON?: unknown }).toJSON, 'function')
+
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full\n\n/)
+})
+
+test('the tool persists a level through the settings document', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full', skillsDir, promptOrder: 42 })
+  assert.equal(host.captured.sections[0]?.order, 42)
+
+  assert.deepEqual(await callTool(host, {}), {
+    mode: 'full', previous: 'full', changed: false, active: true,
+  })
+
+  const switched = await callTool(host, { mode: 'ultra' })
+  assert.deepEqual(switched, { mode: 'ultra', previous: 'full', changed: true, active: true })
+  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'ultra' } }])
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: ultra\n\n/)
+
+  const off = await callTool(host, { mode: 'off' })
+  assert.deepEqual(off, { mode: 'off', previous: 'ultra', changed: true, active: false })
+  assert.equal(sectionText(host.captured.sections[0]), '')
+
+  await assert.rejects(() => callTool(host, { mode: 'shrug' }), /Unknown ponytail level/)
+})
+
+test('review stays session-local because it is not a persistable level', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full', skillsDir })
+
+  const review = await callTool(host, { mode: 'review' })
+  assert.deepEqual(review, { mode: 'review', previous: 'full', changed: true, active: true })
+  assert.deepEqual(host.captured.updates, [])
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: review\./)
+
+  // A card write is a committed settings change: the service leaves the source
+  // thunk alone and signals the commit through `onChange`.
+  host.captured.installs[0]?.hooks.setSource(() => ({ mode: 'lite' }))
+  host.captured.installs[0]?.hooks.onChange()
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: lite\n\n/)
+})
+
+test('a refused settings write still applies the level for this session', async () => {
+  const host = createHost({ failUpdate: true })
+  apply(host.ctx, { defaultMode: 'full', skillsDir })
+
+  const warnings: string[] = []
+  const originalWarn = console.warn
+  console.warn = (message?: unknown): void => { warnings.push(String(message)) }
+  try {
+    const applied = await callTool(host, { mode: 'lite' })
+    assert.deepEqual(applied, { mode: 'lite', previous: 'full', changed: true, active: true })
+  } finally {
+    console.warn = originalWarn
+  }
+
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0] ?? '', /could not persist level "lite": settings document is read-only/)
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: lite\n\n/)
+})
+
+test('the command switches and reports through the UI', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full', skillsDir })
+
+  assert.deepEqual(await callCommand(host, ''), { kind: 'success', text: 'Ponytail level: full.' })
+  assert.deepEqual(await callCommand(host, ' lite '), {
+    kind: 'success', text: 'Ponytail level: lite (was full).',
+  })
+  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'lite' } }])
+
+  assert.deepEqual(await callCommand(host, 'normal mode'), {
+    kind: 'success', text: 'Ponytail off (was lite). Normal behavior.',
+  })
+  assert.equal(sectionText(host.captured.sections[0]), '')
+
+  assert.deepEqual(await callCommand(host, 'full'), {
+    kind: 'success', text: 'Ponytail level: full (was off).',
+  })
+
+  const rejected = await callCommand(host, 'turbo')
+  assert.equal(rejected.kind, 'error')
+  assert.match(rejected.kind === 'error' ? rejected.text : '', /Unknown ponytail level "turbo"/)
+})
+
+test('the tool renders its canonical value for the model', async () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'lite', skillsDir })
+  const tool = host.captured.tools[0]
+  assert.ok(tool)
+
+  const value = await tool.execute({ mode: 'full' }, { signal: new AbortController().signal })
+  assert.deepEqual(tool.output.render({ mode: 'full' }, value), [
+    { type: 'text', text: 'Ponytail level: full (was lite). The ruleset is injected into every request.' },
+  ])
+
+  assert.deepEqual(tool.output.render({}, { mode: 'off', previous: 'full', changed: true, active: false }), [
+    { type: 'text', text: 'Ponytail off (was full). Normal behavior.' },
+  ])
+})
+
+test('apply fails loudly on configuration it cannot honor', () => {
+  const host = createHost()
+  assert.throws(() => apply(host.ctx, { defaultMode: 'review' }), /defaultMode must be one of off, lite, full, ultra/)
+  assert.throws(() => apply(host.ctx, { promptOrder: Number.NaN }), /promptOrder must be a finite number/)
+  assert.throws(() => apply(host.ctx, { skillsDir: '  ' }), /skillsDir must not be empty/)
+})
