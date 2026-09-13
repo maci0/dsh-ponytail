@@ -186,3 +186,12 @@ profile's boot.
 
 MIT. Skill content and mode semantics: © DietrichGebert
 ([ponytail](https://github.com/DietrichGebert/ponytail)). DSH port: see `LICENSE`.
+
+The six `skills/*/SKILL.md` files are verbatim copies, so they carry upstream's
+figures and citations rather than this package's. `/ponytail-gain` therefore
+reports the original five-task single-shot benchmark — 80–94% fewer lines,
+47–77% cheaper, 3–6× faster — which upstream's own README has since revised to
+roughly 54% fewer lines, 20% cheaper and 27% faster on its agentic benchmark;
+and its `Source:` line names `benchmarks/`, which this package does not ship.
+Both are left as written rather than forked, because a fork re-diverges at every
+upstream sync.
