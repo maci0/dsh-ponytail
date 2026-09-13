@@ -40,9 +40,6 @@ test('isDeactivationCommand requires the whole message to be the command', () =>
 
 test('filterSkillBodyForMode keeps only the active level rows and examples', () => {
   const body = [
-    '---',
-    'name: ponytail',
-    '---',
     '# Ponytail',
     '| Level | What change |',
     '|-------|------------|',
@@ -63,7 +60,6 @@ test('filterSkillBodyForMode keeps only the active level rows and examples', () 
   assert.doesNotMatch(full, /- lite:/)
   assert.doesNotMatch(full, /- ultra:/)
   assert.match(full, /- No unrequested abstractions: keep me\./)
-  assert.doesNotMatch(full, /name: ponytail/)
 
   const ultra = filterSkillBodyForMode(body, 'ultra')
   assert.match(ultra, /\*\*ultra\*\* \| YAGNI extremist/)

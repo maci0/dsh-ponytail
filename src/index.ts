@@ -35,6 +35,7 @@ import {
   type PonytailMode,
 } from './modes.ts'
 import { createSkillProvider } from './skills.ts'
+import { parseFrontmatter } from './frontmatter.ts'
 import type {
   CommandInvocationLike,
   CommandResultLike,
@@ -88,13 +89,21 @@ const SECTION_NAME = 'ponytail'
  * @param config - optional row configuration.
  */
 export function apply(ctx: HostContext, config: Config = {}): void {
-  validateConfig(config)
+  // Reject configuration that would silently do the wrong thing.
+  if (config.defaultMode !== undefined && normalizeMode(config.defaultMode) === undefined) {
+    throw new Error(
+      `[ponytail] defaultMode must be one of ${RUNTIME_MODES.join(', ')}; got ${JSON.stringify(config.defaultMode)}`,
+    )
+  }
 
-  const skillsDir = defaultSkillsDir()
+  // `<package>/skills`, resolved from this module's own location.
+  const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
   const startup = resolveDefaultMode({ configured: config.defaultMode })
-  // A missing body means a broken install: fail while loading rather than
-  // injecting a silently truncated ruleset.
-  const skillBody = readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')
+  // Parsed once, at load: the ruleset is filtered per assembly, so the
+  // frontmatter must not have to be re-read for every request. A missing body
+  // means a broken install: fail while loading rather than injecting a silently
+  // truncated ruleset.
+  const skillBody = parseFrontmatter(readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')).body.trimStart()
 
   const warn = (message: string): void => {
     console.warn(`[ponytail] ${message}`)
@@ -237,26 +246,6 @@ function userMessageText(data: unknown): string | undefined {
     .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
     .join('\n')
   return text.trim() === '' ? undefined : text
-}
-
-/**
- * Reject configuration that would silently do the wrong thing.
- * @param config - the row configuration.
- */
-function validateConfig(config: Config): void {
-  if (config.defaultMode !== undefined && normalizeMode(config.defaultMode) === undefined) {
-    throw new Error(
-      `[ponytail] defaultMode must be one of ${RUNTIME_MODES.join(', ')}; got ${JSON.stringify(config.defaultMode)}`,
-    )
-  }
-}
-
-/**
- * Absolute path of the bundled skills directory.
- * @returns `<package>/skills`, resolved from this module's location.
- */
-function defaultSkillsDir(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
 }
 
 /**

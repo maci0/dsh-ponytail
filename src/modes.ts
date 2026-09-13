@@ -99,15 +99,14 @@ export function resolveDefaultMode(sources: DefaultModeSources = {}): RuntimeMod
  * "No unrequested abstractions: ..." — is a normal rule and stays verbatim; the
  * quoted-value requirement on examples is what keeps a rule that merely starts
  * with a level word from being dropped in every other mode.
- * @param body - raw markdown of the `ponytail` skill, frontmatter included.
+ * @param body - markdown of the `ponytail` skill, frontmatter already removed.
  * @param mode - the level to keep.
  * @returns the body with other levels' rows and examples removed.
  */
 export function filterSkillBodyForMode(body: string, mode: PonytailMode): string {
   const effective = normalizeMode(mode) ?? DEFAULT_MODE
-  const withoutFrontmatter = String(body ?? '').replace(/^---[\s\S]*?---\s*/, '')
 
-  return withoutFrontmatter
+  return String(body ?? '')
     .split(/\r?\n/)
     .filter((line) => {
       const tableLabel = /^\|\s*\*\*(.+?)\*\*\s*\|/.exec(line)
@@ -131,7 +130,7 @@ export function filterSkillBodyForMode(body: string, mode: PonytailMode): string
 export interface InstructionInput {
   /** Active level. */
   readonly mode: PonytailMode
-  /** Raw `skills/ponytail/SKILL.md` body. */
+  /** `skills/ponytail/SKILL.md` body with its frontmatter already removed. */
   readonly skillBody: string
 }
 

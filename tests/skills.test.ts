@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseFrontmatter } from '../src/frontmatter.ts'
@@ -33,10 +35,7 @@ test('parseFrontmatter folds block descriptions and keeps the body', () => {
   assert.equal(parsed.body, '\n# Ponytail\n\nBody text.')
 })
 
-test('parseFrontmatter supports literal blocks, quoted scalars, and absent frontmatter', () => {
-  const literal = parseFrontmatter('---\nname: x\ndescription: |\n  one\n  two\n---\nbody\n')
-  assert.equal(literal.data['description'], 'one\ntwo')
-
+test('parseFrontmatter reads quoted scalars and leaves a bodyless file alone', () => {
   const quoted = parseFrontmatter('---\nname: "x"\ndescription: \'y\'\n---\nb\n')
   assert.equal(quoted.data['name'], 'x')
   assert.equal(quoted.data['description'], 'y')
@@ -44,6 +43,36 @@ test('parseFrontmatter supports literal blocks, quoted scalars, and absent front
   const none = parseFrontmatter('# just markdown\n')
   assert.deepEqual(none.data, {})
   assert.equal(none.body, '# just markdown\n')
+})
+
+test('parseFrontmatter refuses a block scalar it does not read', () => {
+  assert.throws(
+    () => parseFrontmatter('---\nname: x\ndescription: |\n  one\n  two\n---\nbody\n'),
+    /unsupported block scalar indicator "\|"/,
+  )
+  assert.throws(
+    () => parseFrontmatter('---\nname: x\ndescription: >-\n  one\n---\nbody\n'),
+    /unsupported block scalar indicator ">-"/,
+  )
+})
+
+test('discoverSkills skips a file the reader refuses and keeps the rest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ponytail-skills-'))
+  try {
+    await mkdir(join(root, 'broken'), { recursive: true })
+    await writeFile(join(root, 'broken', 'SKILL.md'), '---\nname: broken\ndescription: |\n  literal\n---\nbody\n')
+    await mkdir(join(root, 'fine'), { recursive: true })
+    await writeFile(join(root, 'fine', 'SKILL.md'), '---\nname: fine\ndescription: >\n  A usable description.\n---\nbody\n')
+
+    const warnings: string[] = []
+    const skills = await discoverSkills(root, (message) => warnings.push(message))
+
+    assert.deepEqual(skills.map((skill) => skill.name), ['fine'])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0] ?? '', /unsupported block scalar indicator/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('discoverSkills reads every bundled skill with a usable description', async () => {

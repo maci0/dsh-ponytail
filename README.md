@@ -16,15 +16,11 @@ Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytai
 
 ## The ladder
 
-Before writing code, stop at the first rung that holds:
-
-1. Does this need to exist at all? (YAGNI)
-2. Already in this codebase? Reuse it.
-3. Stdlib does it? Use it.
-4. Native platform feature? Use it.
-5. Already-installed dependency? Use it.
-6. One line? One line.
-7. Only then: the minimum code that works.
+Seven rungs — YAGNI, reuse, stdlib, native platform, already-installed
+dependency, one line, then the minimum code that works.
+`skills/ponytail/SKILL.md` is the source of truth, and it is the exact text
+injected into every request while a level other than `off` is active; this
+README deliberately keeps no second copy of it.
 
 Lazy, not negligent: understanding the problem, trust-boundary validation,
 data-loss handling, security, and accessibility are never on the chopping block.

@@ -58,9 +58,10 @@ export interface SkillProviderOptions {
 /**
  * Read every valid skill directory under `skillsDir`.
  *
- * A missing directory, a directory without `SKILL.md`, and a file with a
- * missing description are reported through `onWarn` and skipped: one broken
- * file must not cost the catalog its other skills.
+ * A missing directory, a directory without `SKILL.md`, a file whose frontmatter
+ * the reader refuses, and a file with a missing description are reported
+ * through `onWarn` and skipped: one broken file must not cost the catalog its
+ * other skills.
  * @param skillsDir - directory holding one subdirectory per skill.
  * @param onWarn - optional non-fatal problem sink.
  * @returns the parsed skills, sorted by name.
@@ -89,7 +90,14 @@ export async function discoverSkills(
       continue
     }
 
-    const parsed = parseFrontmatter(source)
+    let parsed: ReturnType<typeof parseFrontmatter>
+    try {
+      parsed = parseFrontmatter(source)
+    } catch (error) {
+      onWarn?.(`skipping ${path}: ${error instanceof Error ? error.message : String(error)}`)
+      continue
+    }
+
     const name = (parsed.data['name'] ?? entry.name).trim()
     const description = (parsed.data['description'] ?? '').trim()
 

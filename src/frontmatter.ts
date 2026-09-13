@@ -2,9 +2,11 @@
  * Minimal YAML-frontmatter reader for the bundled `SKILL.md` files.
  *
  * The plugin deliberately carries no dependencies, and the only frontmatter it
- * must understand is the shape these files use: plain `key: value` pairs plus
- * the folded (`>`) and literal (`|`) block scalars that upstream writes the
- * `description` as. Anything richer is left to the skill registry's validation.
+ * must understand is the shape these files use: plain `key: value` pairs, the
+ * folded (`>`) block scalar every one of them writes its `description` as, and
+ * one optional double-quoted scalar. A block indicator it does not read is
+ * refused rather than guessed at; anything richer is left to the skill
+ * registry's validation.
  *
  * @module dsh-ponytail/frontmatter
  */
@@ -53,8 +55,15 @@ export function parseFrontmatter(source: string): Frontmatter {
     const key = match[1]
     const rawValue = (match[2] ?? '').trim()
 
-    if (rawValue === '>' || rawValue === '>-' || rawValue === '|' || rawValue === '|-') {
-      const folded = readBlockScalar(block, index + 1, rawValue.startsWith('>'), rawValue.endsWith('-'))
+    // Only the folded block scalar every bundled `SKILL.md` writes. A literal
+    // (`|`) or chomped (`>-`, `|-`) indicator is refused rather than read as a
+    // literal string: a wrong description routes worse than a skipped file,
+    // and `discoverSkills` reports the refusal and keeps the other skills.
+    if (rawValue.startsWith('>') || rawValue.startsWith('|')) {
+      if (rawValue !== '>') {
+        throw new Error(`unsupported block scalar indicator ${JSON.stringify(rawValue)} for key "${key}"`)
+      }
+      const folded = readBlockScalar(block, index + 1)
       data[key] = folded.value
       index = folded.lastIndex
       continue
@@ -73,19 +82,12 @@ interface BlockScalar {
 }
 
 /**
- * Read one `>`/`|` block scalar starting after its key line.
+ * Read one folded (`>`) block scalar starting after its key line.
  * @param lines - the frontmatter lines without delimiters.
  * @param start - index of the first line after the key.
- * @param folded - whether the scalar folds newlines into spaces (`>`).
- * @param strip - whether the chomping indicator was `-`.
  * @returns the scalar value and the index of its final line.
  */
-function readBlockScalar(
-  lines: readonly string[],
-  start: number,
-  folded: boolean,
-  strip: boolean,
-): BlockScalar {
+function readBlockScalar(lines: readonly string[], start: number): BlockScalar {
   const collected: string[] = []
   let indent = -1
   let lastIndex = start - 1
@@ -112,11 +114,10 @@ function readBlockScalar(
     lastIndex = index
   }
 
-  // Drop trailing blank lines (chomping), then fold.
+  // Drop trailing blank lines, then fold.
   while (collected.length > 0 && collected[collected.length - 1] === '') collected.pop()
 
-  const value = folded ? foldLines(collected) : collected.join('\n')
-  return { value: strip ? value.replace(/\n+$/, '') : value, lastIndex }
+  return { value: foldLines(collected), lastIndex }
 }
 
 /**
