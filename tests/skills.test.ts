@@ -76,7 +76,7 @@ test('discoverSkills reports and skips an unreadable directory', async () => {
 
 test('the provider lists candidates and loads their bodies', async () => {
   const provider = createSkillProvider({ skillsDir })
-  const candidates = await provider.list({})
+  const candidates = await provider.list()
 
   assert.equal(provider.name, 'ponytail')
   assert.equal(candidates.length, 6)
@@ -91,12 +91,12 @@ test('the provider lists candidates and loads their bodies', async () => {
 
   const review = candidates.find((candidate) => candidate.name === 'ponytail-review')
   assert.ok(review)
-  const definition = await provider.get(review, {})
+  const definition = await provider.get(review)
   assert.ok(definition)
   assert.equal(definition.name, 'ponytail-review')
   assert.match(definition.content, /net: -<N> lines possible\./)
   assert.doesNotMatch(definition.content, /^---/)
 
-  const missing = await provider.get({ ...review, locator: join(skillsDir, 'nope', 'SKILL.md') }, {})
+  const missing = await provider.get({ ...review, locator: join(skillsDir, 'nope', 'SKILL.md') })
   assert.equal(missing, undefined)
 })

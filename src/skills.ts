@@ -14,7 +14,6 @@ import { parseFrontmatter } from './frontmatter.ts'
 import type {
   SkillCandidateLike,
   SkillDefinitionLike,
-  SkillLookupOptionsLike,
   SkillProviderLike,
   SkillSummaryLike,
 } from './host.ts'
@@ -150,7 +149,7 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
   return {
     name: providerName,
 
-    async list(_options: SkillLookupOptionsLike): Promise<readonly SkillCandidateLike[]> {
+    async list(): Promise<readonly SkillCandidateLike[]> {
       const skills = await discoverSkills(options.skillsDir, options.onWarn)
       return skills.map((skill) => ({
         ...summaryOf(skill),
@@ -160,10 +159,7 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
       }))
     },
 
-    async get(
-      candidate: SkillCandidateLike,
-      _options: SkillLookupOptionsLike,
-    ): Promise<SkillDefinitionLike | undefined> {
+    async get(candidate: SkillCandidateLike): Promise<SkillDefinitionLike | undefined> {
       if (typeof candidate.locator !== 'string') return undefined
 
       const skills = await discoverSkills(options.skillsDir, options.onWarn)

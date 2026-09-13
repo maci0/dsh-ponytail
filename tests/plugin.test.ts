@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { apply, PONYTAIL_SETTINGS_NAMESPACE } from '../src/index.ts'
 import type {
   CommandDefinitionLike,
@@ -11,8 +9,6 @@ import type {
   SkillProviderLike,
   ToolDefinitionLike,
 } from '../src/host.ts'
-
-const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
 
 interface InstallRecord {
   readonly namespace: string
@@ -46,8 +42,8 @@ function createHost(options: { failUpdate?: boolean } = {}): { ctx: HostContext;
       },
     },
     skills: {
-      registerProvider: (create: (control: unknown) => SkillProviderLike): (() => void) => {
-        captured.providers.push(create({ signal: new AbortController().signal, invalidate: () => {} }))
+      registerProvider: (create: () => SkillProviderLike): (() => void) => {
+        captured.providers.push(create())
         return () => {}
       },
     },
@@ -102,7 +98,7 @@ function sectionText(section: PromptSectionContribution | undefined): string {
 async function callTool(host: { captured: Captured }, args: unknown): Promise<unknown> {
   const tool = host.captured.tools[0]
   assert.ok(tool)
-  return tool.execute(args, { signal: new AbortController().signal })
+  return tool.execute(args)
 }
 
 async function callCommand(host: { captured: Captured }, rawInput: string) {
@@ -113,14 +109,14 @@ async function callCommand(host: { captured: Captured }, rawInput: string) {
 
 test('apply mounts the section, provider, tool, command, and settings namespace', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full', skillsDir })
+  apply(host.ctx, { defaultMode: 'full' })
 
   assert.equal(host.captured.sections[0]?.name, 'ponytail')
   assert.equal(host.captured.sections[0]?.order, 700)
   assert.equal(host.captured.tools[0]?.name, 'ponytail')
   assert.equal(host.captured.commands[0]?.name, 'ponytail')
   assert.equal(host.captured.providers.length, 1)
-  assert.equal((await host.captured.providers[0]?.list({}))?.length, 6)
+  assert.equal((await host.captured.providers[0]?.list())?.length, 6)
 
   const install = host.captured.installs[0]
   assert.ok(install)
@@ -135,8 +131,7 @@ test('apply mounts the section, provider, tool, command, and settings namespace'
 
 test('the tool persists a level through the settings document', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full', skillsDir, promptOrder: 42 })
-  assert.equal(host.captured.sections[0]?.order, 42)
+  apply(host.ctx, { defaultMode: 'full' })
 
   assert.deepEqual(await callTool(host, {}), {
     mode: 'full', previous: 'full', changed: false, active: true,
@@ -156,7 +151,7 @@ test('the tool persists a level through the settings document', async () => {
 
 test('review stays session-local because it is not a persistable level', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full', skillsDir })
+  apply(host.ctx, { defaultMode: 'full' })
 
   const review = await callTool(host, { mode: 'review' })
   assert.deepEqual(review, { mode: 'review', previous: 'full', changed: true, active: true })
@@ -172,7 +167,7 @@ test('review stays session-local because it is not a persistable level', async (
 
 test('a refused settings write still applies the level for this session', async () => {
   const host = createHost({ failUpdate: true })
-  apply(host.ctx, { defaultMode: 'full', skillsDir })
+  apply(host.ctx, { defaultMode: 'full' })
 
   const warnings: string[] = []
   const originalWarn = console.warn
@@ -191,7 +186,7 @@ test('a refused settings write still applies the level for this session', async 
 
 test('the command switches and reports through the UI', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full', skillsDir })
+  apply(host.ctx, { defaultMode: 'full' })
 
   assert.deepEqual(await callCommand(host, ''), { kind: 'success', text: 'Ponytail level: full.' })
   assert.deepEqual(await callCommand(host, ' lite '), {
@@ -215,11 +210,11 @@ test('the command switches and reports through the UI', async () => {
 
 test('the tool renders its canonical value for the model', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'lite', skillsDir })
+  apply(host.ctx, { defaultMode: 'lite' })
   const tool = host.captured.tools[0]
   assert.ok(tool)
 
-  const value = await tool.execute({ mode: 'full' }, { signal: new AbortController().signal })
+  const value = await tool.execute({ mode: 'full' })
   assert.deepEqual(tool.output.render({ mode: 'full' }, value), [
     { type: 'text', text: 'Ponytail level: full (was lite). The ruleset is injected into every request.' },
   ])
@@ -232,6 +227,4 @@ test('the tool renders its canonical value for the model', async () => {
 test('apply fails loudly on configuration it cannot honor', () => {
   const host = createHost()
   assert.throws(() => apply(host.ctx, { defaultMode: 'review' }), /defaultMode must be one of off, lite, full, ultra/)
-  assert.throws(() => apply(host.ctx, { promptOrder: Number.NaN }), /promptOrder must be a finite number/)
-  assert.throws(() => apply(host.ctx, { skillsDir: '  ' }), /skillsDir must not be empty/)
 })
