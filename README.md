@@ -70,30 +70,33 @@ schema with it):
 
 ### Install
 
+Live-reload install: keep the package as a **plain dependency** (no
+`dsh.bundle`) and put the Loader row in the profile's own
+`cordis.patch.yml`. That file is what `patchReload: live` watches.
+`dsh.profile.bundles` is frozen at boot — do not put this package there.
+
 ```sh
-# straight from GitHub
-dsh plugin --profile web add github:maci0/dsh-ponytail
-# or from a local checkout
 dsh plugin --profile web add /path/to/dsh-ponytail
+# pnpm will warn "declares no dsh.bundle — installed as a plain dependency". That is the point.
 ```
 
-That is the whole install. The package declares `dsh.bundle`, so `dsh plugin`
-adds it to the profile's `dsh.profile.bundles`, and the boot reads the plugin
-row from this package's own `cordis.patch.yml`. **Restart the profile**: a
-bundle list is composed at boot, so a running profile does not pick it up from
-a live patch reload.
+Then paste this into `~/.dsh/profiles/web/cordis.patch.yml` (or merge into
+an existing `- insert:` list):
 
-### Upgrading from 0.4.x or earlier
+```yaml
+- insert:
+    - id: ponytail
+      name: dsh-ponytail
+      config:
+        defaultMode: full
+```
 
-Those versions declared no bundle, so installing meant a dependency **plus** a
-row you pasted into `~/.dsh/profiles/<profile>/cordis.patch.yml`. Delete that
-row before restarting. `insert` appends entries without deduplicating ids, so a
-leftover row and the new bundle layer would both insert `id: ponytail` and
-register the plugin twice.
+Saving that file remounts the plugin. No profile restart. `insert` does not
+dedupe ids — never also list this package in `dsh.profile.bundles`.
 
 ### Verify
 
-After a restart of the profile and a **page refresh** of the Web client:
+After the profile patch save (and a **page refresh** of the Web client the first time):
 
 - Settings → Plugins → **Plugin configuration** shows the Ponytail card;
 - the `skill` tool's catalog lists the six ponytail skills;
@@ -120,7 +123,7 @@ src/skills.ts       skills provider over skills/<name>/SKILL.md
 src/frontmatter.ts  minimal frontmatter reader (plain, `>`, `|`, quoted scalars)
 src/host.ts         structural declaration of the host surface
 lib/client.js       browser half: the settings card + the composer chip (loader factory format)
-cordis.patch.yml    the bundle layer: the one plugin row the boot mounts
+cordis.patch.yml    the Loader row to paste into the profile's live-watched patch
 skills/             the six skills, verbatim from upstream
 tests/              node:test unit + fake-host integration coverage
 ```
@@ -150,14 +153,14 @@ npm run typecheck # tsc --noEmit
 dsh plugin --profile web remove dsh-ponytail
 ```
 
-then restart the profile. The same reconcile pass that added the package to
-`dsh.profile.bundles` drops it again, so there is no row left behind.
+and delete the `id: ponytail` row from
+`~/.dsh/profiles/<profile>/cordis.patch.yml`. Saving unmounts it.
 
 ## Limits
 
-- **A plugin source edit needs a profile restart.** The Loader imports plugin
-  modules with ESM semantics, so a live patch reload re-runs `apply` from the
-  module already in memory. Changing `index.ts` means restarting the profile.
+- **Host source edits remount when `id: hmr` is enabled** with this checkout
+  in `config.root`. Without that, a live patch reload re-runs `apply` from the
+  ESM module already in memory.
 - **A browser-half edit needs a page refresh.** The client module system serves
   `exports["./client"]` from the package, so the host half can stay up.
 - **The level is process-wide.** The ruleset is a global prompt section and the
