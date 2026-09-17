@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const bundlePath = join(packageRoot, 'lib', 'client.js')
 
+/** Installed version from package.json: the card header must show it. */
+const pkgVersion: string = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version
+
 interface Element {
   type: unknown
   props: Record<string, unknown>
@@ -185,13 +188,13 @@ test('the card renders collapsed, naming the plugin and the current level', () =
   const header = buttons(tree)[0]
   assert.ok(header)
   assert.equal(header.props['aria-expanded'], false)
-  assert.equal(header.props['aria-label'], 'Expand: Ponytail')
+  assert.equal(header.props['aria-label'], `Expand: Ponytail v${pkgVersion}`)
   assert.deepEqual(radios(tree), [])
 
   const text = tree
     .filter((element) => typeof element.children[0] === 'string' && element.children.length === 1)
     .map((element) => element.children[0])
-  assert.deepEqual(text, ['Ponytail', 'Lazy senior dev mode — level: Lite.'])
+  assert.deepEqual(text, [`Ponytail v${pkgVersion}`, 'Lazy senior dev mode — level: Lite.'])
 })
 
 test('expanding reveals one radio per persisted level and writes the chosen one', () => {
@@ -205,7 +208,7 @@ test('expanding reveals one radio per persisted level and writes the chosen one'
   const open = expand(react, component)
 
   assert.equal(buttons(open)[0]?.props['aria-expanded'], true)
-  assert.equal(buttons(open)[0]?.props['aria-label'], 'Collapse: Ponytail')
+  assert.equal(buttons(open)[0]?.props['aria-label'], `Collapse: Ponytail v${pkgVersion}`)
   const levels = radios(open)
   assert.deepEqual(levels.map((radio) => radio.children[0]), ['Off', 'Lite', 'Full', 'Ultra'])
   assert.deepEqual(levels.map((radio) => radio.props['aria-checked']), [false, false, true, false])
