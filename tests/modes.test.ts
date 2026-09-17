@@ -4,7 +4,7 @@ import {
   buildModeInstructions,
   filterSkillBodyForMode,
   isDeactivationCommand,
-  normalizeConfigMode,
+  normalizeCommandMode,
   normalizeMode,
   resolveDefaultMode,
 } from '../src/modes.ts'
@@ -17,10 +17,10 @@ test('normalizeMode accepts only runtime levels', () => {
   assert.equal(normalizeMode(42), undefined)
 })
 
-test('normalizeConfigMode additionally accepts the session-only review level', () => {
-  assert.equal(normalizeConfigMode('review'), 'review')
-  assert.equal(normalizeConfigMode('Full'), 'full')
-  assert.equal(normalizeConfigMode('shrug'), undefined)
+test('normalizeCommandMode accepts the session-only review level', () => {
+  assert.equal(normalizeCommandMode('review'), 'review')
+  assert.equal(normalizeCommandMode('Full'), 'full')
+  assert.equal(normalizeCommandMode('shrug'), undefined)
 })
 
 test('resolveDefaultMode prefers config, then env, then full', () => {

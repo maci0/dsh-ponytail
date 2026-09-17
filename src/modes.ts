@@ -40,10 +40,11 @@ export function normalizeMode(value: unknown): RuntimeMode | undefined {
 
 /**
  * Normalize a value to any accepted level, including the session-only `review`.
+ * Accepts the same human `/ponytail` command input as the tool argument.
  * @param value - candidate level.
  * @returns the canonical level, or `undefined` when unrecognized.
  */
-export function normalizeConfigMode(value: unknown): PonytailMode | undefined {
+export function normalizeCommandMode(value: unknown): PonytailMode | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().toLowerCase()
   return VALID_MODES.find((mode) => mode === normalized)
@@ -135,6 +136,13 @@ export interface InstructionInput {
 }
 
 /**
+ * Cache of built instruction blocks. The skill body is parsed once at load
+ * and the level set is fixed, so at most four entries ever exist; assembly
+ * reads the same block every request instead of re-filtering lines.
+ */
+const instructionCache = new Map<string, string>()
+
+/**
  * Build the exact text the system prompt carries for one level.
  * @param input - the active level and the skill body.
  * @returns the instruction block, or `''` when the level is `off`.
@@ -151,6 +159,11 @@ export function buildModeInstructions(input: InstructionInput): string {
   }
 
   const effective = normalizeMode(mode) ?? DEFAULT_MODE
-  return 'PONYTAIL MODE ACTIVE — level: ' + effective + '\n\n' +
+  const cached = instructionCache.get(effective)
+  if (cached !== undefined) return cached
+
+  const built = 'PONYTAIL MODE ACTIVE — level: ' + effective + '\n\n' +
     filterSkillBodyForMode(input.skillBody, effective)
+  instructionCache.set(effective, built)
+  return built
 }

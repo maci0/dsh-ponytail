@@ -27,7 +27,7 @@ import {
   buildModeInstructions,
   DEFAULT_MODE,
   isDeactivationCommand,
-  normalizeConfigMode,
+  normalizeCommandMode,
   normalizeMode,
   resolveDefaultMode,
   RUNTIME_MODES,
@@ -321,7 +321,7 @@ function readModeArgument(args: unknown): PonytailMode | undefined {
   const raw = (args as Record<string, unknown>)['mode']
   if (raw === undefined || raw === null || raw === '') return undefined
 
-  const mode = normalizeConfigMode(raw)
+  const mode = normalizeCommandMode(raw)
   if (mode === undefined) {
     throw new Error(
       `Unknown ponytail level ${JSON.stringify(raw)}. Use one of: ${VALID_MODES.join(', ')}.`,
@@ -378,7 +378,7 @@ async function handleModeCommand(
 
   if (input === '') return { kind: 'success', text: modeSentence(getMode(), getMode(), false) }
 
-  const requested = isDeactivationCommand(input) ? 'off' : normalizeConfigMode(input)
+  const requested = isDeactivationCommand(input) ? 'off' : normalizeCommandMode(input)
   if (requested === undefined) {
     return {
       kind: 'error',

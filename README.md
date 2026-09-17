@@ -58,7 +58,7 @@ this writes the same `off` that `/ponytail off` writes, because in DSH the level
 *is* the persisted preference and a session-only override would leave the card
 and the chip reporting something the prompt does not do.
 
-## Install
+## Halves
 
 The plugin is two halves in one package and has no runtime dependencies beyond
 `@deepseek-ai/schemastery` (the settings service serializes the namespace
@@ -68,7 +68,7 @@ schema with it):
 - **browser half** — `lib/client.js`, served by the client module system because
   the package declares `dsh.client` and exports `./client`.
 
-### Install
+## Install
 
 Live-reload install: keep the package as a **plain dependency** (no
 `dsh.bundle`) and put the Loader row in the profile's own
@@ -94,7 +94,7 @@ an existing `- insert:` list):
 Saving that file remounts the plugin. No profile restart. `insert` does not
 dedupe ids — never also list this package in `dsh.profile.bundles`.
 
-### Verify
+## Verify
 
 After the profile patch save (and a **page refresh** of the Web client the first time):
 
