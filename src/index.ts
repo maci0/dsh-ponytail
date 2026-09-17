@@ -77,12 +77,6 @@ export interface Config {
   readonly defaultMode?: string
 }
 
-/** Default system-prompt position: after the persona prefix, before tool guidance. */
-const DEFAULT_PROMPT_ORDER = 700
-
-/** Section name of the injected ruleset. */
-const SECTION_NAME = 'ponytail'
-
 /**
  * Mount the plugin.
  * @param ctx - the host context.
@@ -186,8 +180,8 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 
   ctx.inject(['systemPrompt'], (scope) => {
     scope.systemPrompt.section({
-      name: SECTION_NAME,
-      order: DEFAULT_PROMPT_ORDER,
+      name: 'ponytail',
+      order: 700, // after the persona prefix, before tool guidance
       // Evaluated at each assembly, so a level change lands on the next request.
       // `off` returns empty text, which assembly drops.
       text: () => buildModeInstructions({ mode: activeMode(), skillBody }),
