@@ -60,28 +60,25 @@ export const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
  * Persisted configuration. `review` is deliberately absent: it is a
  * session-only review mode, not a level a deployment may start in.
  */
-export const PonytailSettings = z.object({
+const PonytailSettings = z.object({
   mode: z.union([...RUNTIME_MODES]).default(DEFAULT_MODE),
 })
 
 /**
  * Configuration accepted from this plugin's row in a profile patch.
  *
- * The level is deliberately **not** defaulted here: a schema default is filled
- * by Cordis before {@link apply} runs, which would make an absent `defaultMode`
- * indistinguishable from an explicit one and hide the documented
- * `PONYTAIL_DEFAULT_MODE` fallback. Absence reaches {@link resolveDefaultMode}
- * instead; an invalid value still fails at load, because the union below
- * rejects it.
+ * The level is defaulted in the schema below, so the loader fills an absent
+ * `defaultMode` with `full` before {@link apply} runs; an invalid value still
+ * fails at load, because the union rejects it.
  */
 export interface Config {
-  /** Startup level (`off`, `lite`, `full`, `ultra`). Absent means the chain decides. */
+  /** Startup level (`off`, `lite`, `full`, `ultra`). */
   readonly defaultMode?: RuntimeMode
 }
 
-/** Row schema: an absent level resolves through the environment chain. */
+/** Row schema: an absent level is filled by the loader before `apply`. */
 export const Config: z<Config> = z.object({
-  defaultMode: z.union([...RUNTIME_MODES]),
+  defaultMode: z.union([...RUNTIME_MODES]).default(DEFAULT_MODE),
 })
 
 /**
@@ -90,23 +87,14 @@ export const Config: z<Config> = z.object({
  * @param config - optional row configuration.
  */
 export function apply(ctx: HostContext, config: Config = {}): void {
-  // Reject configuration that would silently do the wrong thing.
-  if (config.defaultMode !== undefined && normalizeMode(config.defaultMode) === undefined) {
-    throw new Error(
-      `[ponytail] defaultMode must be one of ${RUNTIME_MODES.join(', ')}; got ${JSON.stringify(config.defaultMode)}`,
-    )
-  }
-
   // `<package>/skills`, resolved from this module's own location.
   const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
-  const startup = resolveDefaultMode({ configured: config.defaultMode })
+  const startup = resolveDefaultMode(config.defaultMode)
   // Parsed once, at load: the ruleset is filtered per assembly, so the
   // frontmatter must not have to be re-read for every request. A missing body
   // means a broken install: fail while loading rather than injecting a silently
   // truncated ruleset.
   const skillBody = parseFrontmatter(readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')).body.trimStart()
-  // Owned by this mount, so a reload cannot read another instance's blocks.
-  const instructionCache = new Map<string, string>()
 
   const warn = (message: string): void => {
     console.warn(`[ponytail] ${message}`)
@@ -211,7 +199,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       order: 700, // after the persona prefix, before tool guidance
       // Evaluated at each assembly, so a level change lands on the next request.
       // `off` returns empty text, which assembly drops.
-      text: () => buildModeInstructions({ mode: activeMode(), skillBody }, instructionCache),
+      text: () => buildModeInstructions({ mode: activeMode(), skillBody }),
     })
   })
 
@@ -350,9 +338,8 @@ function createModeTool(
 /**
  * Read the optional `mode` argument.
  *
- * `defineTool` already rejected a value outside the enum, so this is the
- * narrow read for argument shapes that reach the body without that gate (the
- * plugin's own tests, and any host that registers the definition directly).
+ * `defineTool` already rejected a value outside the enum, so an unrecognized
+ * value never reaches the body and reads as a status query.
  * @param args - losslessly snapshotted model arguments.
  * @returns the requested level, or `undefined` for a status query.
  */
@@ -362,13 +349,7 @@ function readModeArgument(args: unknown): PonytailMode | undefined {
   const raw = (args as Record<string, unknown>)['mode']
   if (raw === undefined || raw === null || raw === '') return undefined
 
-  const mode = normalizeCommandMode(raw)
-  if (mode === undefined) {
-    throw new Error(
-      `Unknown ponytail level ${JSON.stringify(raw)}. Use one of: ${VALID_MODES.join(', ')}.`,
-    )
-  }
-  return mode
+  return normalizeCommandMode(raw)
 }
 
 /**

@@ -12,7 +12,7 @@
  * @module dsh-ponytail/frontmatter
  */
 /** Parsed frontmatter plus the markdown body that follows it. */
-export interface Frontmatter {
+interface Frontmatter {
     /** Frontmatter keys and their YAML-parsed values. */
     readonly data: Readonly<Record<string, unknown>>;
     /** Everything after the closing delimiter, or the whole source when absent. */
@@ -24,3 +24,4 @@ export interface Frontmatter {
  * @returns the parsed keys and the remaining body.
  */
 export declare function parseFrontmatter(source: string): Frontmatter;
+export {};

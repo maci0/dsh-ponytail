@@ -30,29 +30,17 @@ export declare const name = "ponytail";
  */
 export declare const PONYTAIL_SETTINGS_NAMESPACE = "ponytail";
 /**
- * Persisted configuration. `review` is deliberately absent: it is a
- * session-only review mode, not a level a deployment may start in.
- */
-export declare const PonytailSettings: z<Schemastery.ObjectS<{
-    mode: z<"full" | "lite" | "off" | "ultra", "full" | "lite" | "off" | "ultra">;
-}>, Schemastery.ObjectT<{
-    mode: z<"full" | "lite" | "off" | "ultra", "full" | "lite" | "off" | "ultra">;
-}>>;
-/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
- * The level is deliberately **not** defaulted here: a schema default is filled
- * by Cordis before {@link apply} runs, which would make an absent `defaultMode`
- * indistinguishable from an explicit one and hide the documented
- * `PONYTAIL_DEFAULT_MODE` fallback. Absence reaches {@link resolveDefaultMode}
- * instead; an invalid value still fails at load, because the union below
- * rejects it.
+ * The level is defaulted in the schema below, so the loader fills an absent
+ * `defaultMode` with `full` before {@link apply} runs; an invalid value still
+ * fails at load, because the union rejects it.
  */
 export interface Config {
-    /** Startup level (`off`, `lite`, `full`, `ultra`). Absent means the chain decides. */
+    /** Startup level (`off`, `lite`, `full`, `ultra`). */
     readonly defaultMode?: RuntimeMode;
 }
-/** Row schema: an absent level resolves through the environment chain. */
+/** Row schema: an absent level is filled by the loader before `apply`. */
 export declare const Config: z<Config>;
 /**
  * Mount the plugin.

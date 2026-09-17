@@ -23,12 +23,11 @@ test('normalizeCommandMode accepts the session-only review level', () => {
   assert.equal(normalizeCommandMode('shrug'), undefined)
 })
 
-test('resolveDefaultMode prefers config, then env, then full', () => {
-  assert.equal(resolveDefaultMode({ configured: 'ultra', env: { PONYTAIL_DEFAULT_MODE: 'lite' } }), 'ultra')
-  assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'lite' } }), 'lite')
-  assert.equal(resolveDefaultMode({ env: {} }), 'full')
-  assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'nonsense' } }), 'full')
-  assert.equal(resolveDefaultMode({ env: { PONYTAIL_DEFAULT_MODE: 'review' } }), 'full')
+test('resolveDefaultMode takes a configured level and falls back to full', () => {
+  assert.equal(resolveDefaultMode('ultra'), 'ultra')
+  assert.equal(resolveDefaultMode(undefined), 'full')
+  assert.equal(resolveDefaultMode('nonsense'), 'full')
+  assert.equal(resolveDefaultMode('review'), 'full')
 })
 
 test('isDeactivationCommand requires the whole message to be the command', () => {
@@ -76,14 +75,4 @@ test('buildModeInstructions drops the ruleset when off and points at review', ()
   const full = buildModeInstructions({ mode: 'full', skillBody: '# The ladder\n\nstop at the first rung' })
   assert.match(full, /^PONYTAIL MODE ACTIVE — level: full\n\n# The ladder/)
   assert.match(full, /stop at the first rung$/)
-})
-
-test('instruction caches are per-mount, so a second mount is never served the first body', () => {
-  const first = new Map<string, string>()
-  const second = new Map<string, string>()
-
-  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# first' }, first), /# first$/)
-  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# second' }, second), /# second$/)
-  // The first mount's cache still answers with its own body.
-  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# second' }, first), /# first$/)
 })

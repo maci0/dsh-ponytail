@@ -10,15 +10,16 @@
 
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { BUNDLED_SKILL_RANK, isSkillName } from '@deepseek-ai/dsh-skill'
+import {
+  BUNDLED_SKILL_RANK,
+  isSkillName,
+  type SkillCandidate,
+  type SkillDefinition,
+  type SkillLookupOptions,
+  type SkillSummary,
+} from '@deepseek-ai/dsh-skill'
 import { parseFrontmatter } from './frontmatter.ts'
-import type {
-  SkillCandidateLike,
-  SkillDefinitionLike,
-  SkillLookupOptionsLike,
-  SkillProviderLike,
-  SkillSummaryLike,
-} from './host.ts'
+import type { SkillProviderLike } from './host.ts'
 
 /** Provider name inside the skill registry. */
 const PROVIDER_NAME = 'ponytail'
@@ -40,7 +41,7 @@ const INVOCATION_KEYS = new Set([
 ])
 
 /** One parsed bundled skill. */
-export interface PonytailSkill {
+interface PonytailSkill {
   /** Kebab-case skill name from frontmatter, or the directory name. */
   readonly name: string
   /** Routing description from frontmatter. */
@@ -73,7 +74,7 @@ function scalar(value: unknown): string | undefined {
 }
 
 /** Options for {@link createSkillProvider}. */
-export interface SkillProviderOptions {
+interface SkillProviderOptions {
   /** Directory holding one subdirectory per skill. */
   readonly skillsDir: string
   /** Receives non-fatal discovery problems instead of throwing. */
@@ -88,7 +89,7 @@ export interface SkillProviderOptions {
  * @param onWarn - optional non-fatal problem sink.
  * @returns the parsed skill, or `undefined` with a warning when invalid.
  */
-export async function readSkillFile(
+async function readSkillFile(
   path: string,
   onWarn?: (message: string) => void,
   entryName?: string,
@@ -100,13 +101,8 @@ export async function readSkillFile(
     return undefined
   }
 
-  let parsed: ReturnType<typeof parseFrontmatter>
-  try {
-    parsed = parseFrontmatter(source)
-  } catch (error) {
-    onWarn?.(`skipping ${path}: ${error instanceof Error ? error.message : String(error)}`)
-    return undefined
-  }
+  // `parseFrontmatter` surfaces a malformed block as empty data, never a throw.
+  const parsed = parseFrontmatter(source)
 
   const fallback = entryName ?? basename(path)
   const name = scalar(parsed.data['name']) ?? fallback
@@ -187,7 +183,7 @@ export async function discoverSkills(
  * @returns a provider whose candidates are summaries and whose bodies come from disk.
  */
 export function createSkillProvider(options: SkillProviderOptions): SkillProviderLike {
-  const summaryOf = (skill: PonytailSkill): SkillSummaryLike => ({
+  const summaryOf = (skill: PonytailSkill): SkillSummary => ({
     path: skill.path,
     name: skill.name,
     description: skill.description,
@@ -205,7 +201,7 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
     // invalidate and no watcher to own. `list`/`get` honor the caller's abort
     // signal only at their own await boundaries: a caller that aborts mid-read
     // gets no candidates rather than a later answer it stopped waiting for.
-    async list(lookup: SkillLookupOptionsLike = {}): Promise<readonly SkillCandidateLike[]> {
+    async list(lookup: SkillLookupOptions = {}): Promise<readonly SkillCandidate[]> {
       if (lookup.signal?.aborted) return []
       const skills = await discoverSkills(options.skillsDir, options.onWarn)
       if (lookup.signal?.aborted) return []
@@ -217,7 +213,7 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
       }))
     },
 
-    async get(candidate: SkillCandidateLike, lookup: SkillLookupOptionsLike = {}): Promise<SkillDefinitionLike | undefined> {
+    async get(candidate: SkillCandidate, lookup: SkillLookupOptions = {}): Promise<SkillDefinition | undefined> {
       if (typeof candidate.locator !== 'string') return undefined
       if (lookup.signal?.aborted) return undefined
 

@@ -87,14 +87,23 @@ data-loss handling, security, and accessibility are never on the chopping block.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `defaultMode` | unset | Startup level. Absent means "ask the chain below". Must be `off`, `lite`, `full`, or `ultra`. |
+| `defaultMode` | `full` | Startup level. Must be `off`, `lite`, `full`, or `ultra`. |
 
-The exported `Config` schema deliberately declares no default, so an absent field
-is still absent when `apply` resolves the chain: the row's `defaultMode`, then
-`PONYTAIL_DEFAULT_MODE`, then `full`. The user's settings namespace overrides it
-once a level is chosen in the card or by `/ponytail`. An invalid level fails while
-the plugin loads rather than quietly doing the wrong thing — the schema rejects
-the row, and `apply` re-checks it.
+The exported `Config` schema defaults the field, so a row that omits `defaultMode`
+starts in `full`. The user's settings namespace overrides it once a level is chosen
+in the card or by `/ponytail`. An invalid level fails while the plugin loads rather
+than quietly doing the wrong thing: the loader validates the row against the
+exported schema.
+
+To set the startup level from the environment, override the row in your profile's
+`cordis.patch.yml` with a `!!js` expression (same `id`, which replaces the row's
+whole `config`):
+
+```yaml
+- id: ponytail
+  config:
+    defaultMode: !!js process.env.PONYTAIL_DEFAULT_MODE ?? 'full'
+```
 
 ## How it works
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { apply, PONYTAIL_SETTINGS_NAMESPACE, type Config } from '../src/index.ts'
+import { apply, PONYTAIL_SETTINGS_NAMESPACE } from '../src/index.ts'
 import type {
   CommandDefinitionLike,
   HostContext,
@@ -259,33 +259,6 @@ test('the tool renders its canonical value for the model', async () => {
     tool.output.render({} as JsonValue, { mode: 'off', previous: 'full', changed: true, active: false }),
     [{ type: 'text', text: 'Ponytail off (was full). Normal behavior.' }],
   )
-})
-
-test('apply fails loudly on configuration it cannot honor', () => {
-  const host = createHost()
-  // A row arrives as untyped YAML: the exported schema rejects this level while
-  // the plugin loads, and this hand check is the backstop for a host that
-  // mounts the plugin without validating the row.
-  assert.throws(
-    () => apply(host.ctx, { defaultMode: 'review' } as unknown as Config),
-    /defaultMode must be one of off, lite, full, ultra/,
-  )
-})
-
-test('an absent defaultMode still resolves through PONYTAIL_DEFAULT_MODE', () => {
-  const host = createHost()
-  const previous = process.env['PONYTAIL_DEFAULT_MODE']
-  process.env['PONYTAIL_DEFAULT_MODE'] = 'ultra'
-  try {
-    // The exported schema declares no `.default()`, so an absent field reaches
-    // `resolveDefaultMode` instead of being pre-filled to `full` by Cordis.
-    apply(host.ctx)
-    assert.deepEqual(host.captured.installs[0]?.entry, { mode: 'ultra' })
-    assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: ultra\n\n/)
-  } finally {
-    if (previous === undefined) delete process.env['PONYTAIL_DEFAULT_MODE']
-    else process.env['PONYTAIL_DEFAULT_MODE'] = previous
-  }
 })
 
 test('the tool declares the published argument schema', () => {
