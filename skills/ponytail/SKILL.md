@@ -13,6 +13,10 @@ description: >
   over-engineering, bloat, boilerplate, or unnecessary dependencies. Do NOT
   use for non-coding requests (general knowledge, prose, translation,
   summaries, recipes).
+whenToUse: >
+  Use when the user asks for the lazy solution, the simplest or shortest
+  thing that works, mentions YAGNI or "do less", or complains about
+  over-engineering, bloat, or boilerplate.
 argument-hint: "[lite|full|ultra]"
 license: MIT
 ---

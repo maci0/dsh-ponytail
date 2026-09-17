@@ -169,6 +169,9 @@ test('the card binds the ponytail namespace and registers into the plugins tab',
   assert.equal(registered.length, 2)
   assert.equal(registered[0]?.entry['name'], 'settings.plugin.item')
   assert.equal(registered[0]?.entry['key'], 'ponytail')
+  // The slot contract's `locale` field: the namespace the framework binds the
+  // card's `t` seat to, which is the dictionary registered above.
+  assert.equal(registered[0]?.entry['locale'], 'ponytail')
   assert.equal(registered[1]?.entry['name'], 'conversation.input.left')
   assert.equal(registered[1]?.entry['id'], 'ponytail-level')
 })

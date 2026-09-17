@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apply, PONYTAIL_SETTINGS_NAMESPACE } from '../src/index.ts'
+import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { apply, PONYTAIL_SETTINGS_NAMESPACE, type Config } from '../src/index.ts'
 import type {
   CommandDefinitionLike,
   HostContext,
@@ -8,7 +10,6 @@ import type {
   SessionEventLike,
   SettingsSectionHooksLike,
   SkillProviderLike,
-  ToolDefinitionLike,
 } from '../src/host.ts'
 
 interface InstallRecord {
@@ -21,14 +22,16 @@ interface InstallRecord {
 interface Captured {
   readonly sections: PromptSectionContribution[]
   readonly providers: SkillProviderLike[]
-  readonly tools: ToolDefinitionLike[]
+  readonly tools: ToolDefinition[]
   readonly commands: CommandDefinitionLike[]
   readonly installs: InstallRecord[]
   readonly updates: { namespace: string; patch: Record<string, unknown> }[]
 }
 
 /** A host that records registrations and emulates the settings document. */
-function createHost(options: { failUpdate?: boolean } = {}): {
+function createHost(
+  options: { failUpdate?: boolean; detachSettings?: boolean; updateDelayMs?: number } = {},
+): {
   ctx: HostContext
   captured: Captured
   emit: (event: SessionEventLike) => void
@@ -53,7 +56,7 @@ function createHost(options: { failUpdate?: boolean } = {}): {
       },
     },
     tools: {
-      register: (tool: ToolDefinitionLike): (() => void) => {
+      register: (tool: ToolDefinition): (() => void) => {
         captured.tools.push(tool)
         return () => {}
       },
@@ -80,6 +83,9 @@ function createHost(options: { failUpdate?: boolean } = {}): {
       },
       update: async (namespace: string, patch: Record<string, unknown>): Promise<void> => {
         if (options.failUpdate === true) throw new Error('settings document is read-only')
+        if (options.updateDelayMs !== undefined) {
+          await new Promise((resolve) => { setTimeout(resolve, options.updateDelayMs) })
+        }
         captured.updates.push({ namespace, patch })
         user = { ...user, ...patch }
       },
@@ -90,6 +96,10 @@ function createHost(options: { failUpdate?: boolean } = {}): {
 
   const ctx = {
     ...services,
+    // The real service disappears from `ctx.get` while its provider is unloaded;
+    // `detachSettings` reproduces that without disposing the whole context.
+    get: (service: string): unknown =>
+      (service === 'settings' && options.detachSettings === true ? undefined : (services as Record<string, unknown>)[service]),
     inject: (_dependencies: readonly string[], callback: (scope: HostContext) => void): void => {
       callback(ctx as unknown as HostContext)
     },
@@ -110,10 +120,16 @@ function sectionText(section: PromptSectionContribution | undefined): string {
   return typeof section.text === 'function' ? section.text({}) : section.text
 }
 
-async function callTool(host: { captured: Captured }, args: unknown): Promise<unknown> {
+async function callTool(
+  host: { captured: Captured },
+  args: unknown,
+  signal: AbortSignal = new AbortController().signal,
+): Promise<unknown> {
   const tool = host.captured.tools[0]
   assert.ok(tool)
-  return tool.execute(args)
+  // Only `signal` is consulted by this tool body; the rest of the execution
+  // identity (call id, agent, deferral hooks) is the registry's business.
+  return tool.execute(args, { signal } as ToolRunContext)
 }
 
 async function callCommand(host: { captured: Captured }, rawInput: string) {
@@ -161,7 +177,12 @@ test('the tool persists a level through the settings document', async () => {
   assert.deepEqual(off, { mode: 'off', previous: 'ultra', changed: true, active: false })
   assert.equal(sectionText(host.captured.sections[0]), '')
 
-  await assert.rejects(() => callTool(host, { mode: 'shrug' }), /Unknown ponytail level/)
+  // `defineTool` validates the enum before the body runs, so an unknown level
+  // fails as a typed argument error rather than the old hand-rolled message.
+  await assert.rejects(
+    () => callTool(host, { mode: 'shrug' }),
+    /invalid arguments: "mode" must be one of \["off","lite","full","ultra","review"\]/,
+  )
 })
 
 test('review stays session-local because it is not a persistable level', async () => {
@@ -229,19 +250,98 @@ test('the tool renders its canonical value for the model', async () => {
   const tool = host.captured.tools[0]
   assert.ok(tool)
 
-  const value = await tool.execute({ mode: 'full' })
-  assert.deepEqual(tool.output.render({ mode: 'full' }, value), [
+  const value = await callTool(host, { mode: 'full' })
+  assert.deepEqual(tool.output.render({ mode: 'full' } as JsonValue, value as JsonValue), [
     { type: 'text', text: 'Ponytail level: full (was lite). The ruleset is injected into every request.' },
   ])
 
-  assert.deepEqual(tool.output.render({}, { mode: 'off', previous: 'full', changed: true, active: false }), [
-    { type: 'text', text: 'Ponytail off (was full). Normal behavior.' },
-  ])
+  assert.deepEqual(
+    tool.output.render({} as JsonValue, { mode: 'off', previous: 'full', changed: true, active: false }),
+    [{ type: 'text', text: 'Ponytail off (was full). Normal behavior.' }],
+  )
 })
 
 test('apply fails loudly on configuration it cannot honor', () => {
   const host = createHost()
-  assert.throws(() => apply(host.ctx, { defaultMode: 'review' }), /defaultMode must be one of off, lite, full, ultra/)
+  // A row arrives as untyped YAML: the exported schema rejects this level while
+  // the plugin loads, and this hand check is the backstop for a host that
+  // mounts the plugin without validating the row.
+  assert.throws(
+    () => apply(host.ctx, { defaultMode: 'review' } as unknown as Config),
+    /defaultMode must be one of off, lite, full, ultra/,
+  )
+})
+
+test('an absent defaultMode still resolves through PONYTAIL_DEFAULT_MODE', () => {
+  const host = createHost()
+  const previous = process.env['PONYTAIL_DEFAULT_MODE']
+  process.env['PONYTAIL_DEFAULT_MODE'] = 'ultra'
+  try {
+    // The exported schema declares no `.default()`, so an absent field reaches
+    // `resolveDefaultMode` instead of being pre-filled to `full` by Cordis.
+    apply(host.ctx)
+    assert.deepEqual(host.captured.installs[0]?.entry, { mode: 'ultra' })
+    assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: ultra\n\n/)
+  } finally {
+    if (previous === undefined) delete process.env['PONYTAIL_DEFAULT_MODE']
+    else process.env['PONYTAIL_DEFAULT_MODE'] = previous
+  }
+})
+
+test('the tool declares the published argument schema', () => {
+  const host = createHost()
+  apply(host.ctx, { defaultMode: 'full' })
+  const tool = host.captured.tools[0]
+  assert.ok(tool)
+
+  // The `defineTool` DSL compiles an implicit *open* object root, so unlike the
+  // raw schema this replaces it declares no `additionalProperties`.
+  assert.deepEqual(tool.parameters, {
+    type: 'object',
+    properties: {
+      mode: {
+        type: 'string',
+        description: 'Level to activate. Omit to report the current level.',
+        enum: ['off', 'lite', 'full', 'ultra', 'review'],
+      },
+    },
+  })
+  assert.deepEqual(tool.output.schema, {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      mode: { type: 'string', enum: ['off', 'lite', 'full', 'ultra', 'review'] },
+      previous: { type: 'string', enum: ['off', 'lite', 'full', 'ultra', 'review'] },
+      changed: { type: 'boolean' },
+      active: { type: 'boolean' },
+    },
+    required: ['mode', 'previous', 'changed', 'active'],
+  })
+})
+
+test('a detached settings service is not written to', async () => {
+  const host = createHost({ detachSettings: true })
+  apply(host.ctx, { defaultMode: 'full' })
+
+  // `ctx.get('settings')` is queried per call, so an unmounted service makes
+  // the level session-local instead of reaching a detached one.
+  const applied = await callTool(host, { mode: 'lite' })
+  assert.deepEqual(applied, { mode: 'lite', previous: 'full', changed: true, active: true })
+  assert.deepEqual(host.captured.updates, [])
+})
+
+test('the tool settles when the caller aborts a slow settings write', async () => {
+  const host = createHost({ updateDelayMs: 50 })
+  apply(host.ctx, { defaultMode: 'full' })
+
+  const controller = new AbortController()
+  const pending = callTool(host, { mode: 'ultra' }, controller.signal)
+  controller.abort()
+
+  const started = Date.now()
+  const applied = await pending
+  assert.ok(Date.now() - started < 40, 'the call settled before the write did')
+  assert.deepEqual(applied, { mode: 'ultra', previous: 'full', changed: true, active: true })
 })
 
 /** Let the fire-and-forget settings write settle. */

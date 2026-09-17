@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from '@deepseek-ai/schemastery'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   buildModeInstructions,
   DEFAULT_MODE,
@@ -33,6 +34,7 @@ import {
   RUNTIME_MODES,
   VALID_MODES,
   type PonytailMode,
+  type RuntimeMode,
 } from './modes.ts'
 import { createSkillProvider } from './skills.ts'
 import { parseFrontmatter } from './frontmatter.ts'
@@ -42,7 +44,6 @@ import type {
   HostContext,
   SessionMessageLike,
   SettingsServiceLike,
-  ToolDefinitionLike,
 } from './host.ts'
 
 /** Plugin name as it appears in the loader. */
@@ -66,16 +67,22 @@ export const PonytailSettings = z.object({
 /**
  * Configuration accepted from this plugin's row in a profile patch.
  *
- * No Schemastery `Config` schema is exported: the loader would require a
- * Standard Schema for it, and this plugin validates its own row instead so the
- * loader never has to. The runtime import of `@deepseek-ai/schemastery` is for
- * {@link PonytailSettings}, whose `toJSON()` the settings service serializes
- * for browser-side rehydration.
+ * The level is deliberately **not** defaulted here: a schema default is filled
+ * by Cordis before {@link apply} runs, which would make an absent `defaultMode`
+ * indistinguishable from an explicit one and hide the documented
+ * `PONYTAIL_DEFAULT_MODE` fallback. Absence reaches {@link resolveDefaultMode}
+ * instead; an invalid value still fails at load, because the union below
+ * rejects it.
  */
 export interface Config {
-  /** Startup level (`off`, `lite`, `full`, `ultra`). Defaults to `PONYTAIL_DEFAULT_MODE`, then `full`. */
-  readonly defaultMode?: string
+  /** Startup level (`off`, `lite`, `full`, `ultra`). Absent means the chain decides. */
+  readonly defaultMode?: RuntimeMode
 }
+
+/** Row schema: an absent level resolves through the environment chain. */
+export const Config: z<Config> = z.object({
+  defaultMode: z.union([...RUNTIME_MODES]),
+})
 
 /**
  * Mount the plugin.
@@ -98,6 +105,8 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   // means a broken install: fail while loading rather than injecting a silently
   // truncated ruleset.
   const skillBody = parseFrontmatter(readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')).body.trimStart()
+  // Owned by this mount, so a reload cannot read another instance's blocks.
+  const instructionCache = new Map<string, string>()
 
   const warn = (message: string): void => {
     console.warn(`[ponytail] ${message}`)
@@ -107,7 +116,6 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   let override: PonytailMode | undefined
   /** Authoritative configuration source: the settings scope once attached, else the row. */
   let source: () => unknown = () => ({ mode: startup })
-  let settings: SettingsServiceLike | undefined
 
   const configuredMode = (): PonytailMode | undefined => {
     const value = source()
@@ -117,11 +125,28 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 
   const activeMode = (): PonytailMode => override ?? configuredMode() ?? startup
 
-  /** Persist a level through the settings document; false when it cannot hold it. */
-  const persist = async (next: PonytailMode): Promise<boolean> => {
+  /** The mounted settings service, or `undefined` while none is attached. */
+  const settingsService = (): SettingsServiceLike | undefined => {
+    const service = ctx.get('settings')
+    return service === undefined || service === null ? undefined : (service as SettingsServiceLike)
+  }
+
+  /**
+   * Persist a level through the settings document; false when it cannot hold it.
+   *
+   * The service is queried at the use site rather than captured from the
+   * `inject` callback: the callback's fiber disposes when the settings service
+   * unloads, and a captured reference would then let a later write reach a
+   * detached service.
+   * @param next - the level to commit.
+   * @param signal - caller cancellation; an aborted call commits nothing.
+   * @returns whether the document accepted the level.
+   */
+  const persist = async (next: PonytailMode, signal?: AbortSignal): Promise<boolean> => {
+    const settings = settingsService()
     if (settings === undefined || normalizeMode(next) === undefined) return false
     try {
-      await settings.update(PONYTAIL_SETTINGS_NAMESPACE, { mode: next })
+      await abortable(settings.update(PONYTAIL_SETTINGS_NAMESPACE, { mode: next }), signal)
       return true
     } catch (error) {
       warn(`could not persist level "${next}": ${error instanceof Error ? error.message : String(error)}`)
@@ -131,9 +156,10 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 
   const setMode = async (
     next: PonytailMode,
+    signal?: AbortSignal,
   ): Promise<{ previous: PonytailMode; mode: PonytailMode; changed: boolean }> => {
     const previous = activeMode()
-    override = (await persist(next)) ? undefined : next
+    override = (await persist(next, signal)) ? undefined : next
     const mode = activeMode()
     return { previous, mode, changed: mode !== previous }
   }
@@ -158,8 +184,9 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   }
 
   ctx.inject(['settings'], (scope) => {
-    settings = scope.settings
-    settings.installSection(
+    // The section is an effect on this callback's fiber, so it unregisters with
+    // it; the service itself is re-queried at each use site instead of captured.
+    scope.settings.installSection(
       ctx,
       PONYTAIL_SETTINGS_NAMESPACE,
       PonytailSettings,
@@ -184,7 +211,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       order: 700, // after the persona prefix, before tool guidance
       // Evaluated at each assembly, so a level change lands on the next request.
       // `off` returns empty text, which assembly drops.
-      text: () => buildModeInstructions({ mode: activeMode(), skillBody }),
+      text: () => buildModeInstructions({ mode: activeMode(), skillBody }, instructionCache),
     })
   })
 
@@ -243,16 +270,38 @@ function userMessageText(data: unknown): string | undefined {
 }
 
 /**
+ * Await `work`, settling early when `signal` aborts.
+ *
+ * The settings write is not interruptible from here, so the abandoned promise
+ * still settles on its own; only its rejection is absorbed, and the tool call
+ * returns before the write it no longer waits for.
+ * @param work - the in-flight write.
+ * @param signal - caller cancellation.
+ * @returns the write's result once it settles.
+ */
+function abortable<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined || signal.aborted) return work
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(new Error('aborted'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+/**
  * Build the model-facing level tool.
  * @param getMode - reads the active level.
  * @param setMode - applies and persists a level.
- * @returns the raw tool definition.
+ * @returns the registered tool definition.
  */
 function createModeTool(
   getMode: () => PonytailMode,
-  setMode: (next: PonytailMode) => Promise<{ previous: PonytailMode; mode: PonytailMode; changed: boolean }>,
-): ToolDefinitionLike {
-  return {
+  setMode: (
+    next: PonytailMode,
+    signal?: AbortSignal,
+  ) => Promise<{ previous: PonytailMode; mode: PonytailMode; changed: boolean }>,
+) {
+  return defineTool({
     name: 'ponytail',
     // The `enum` below already names every level, and the injected ruleset
     // explains what each one does; repeating both here only costs tokens.
@@ -261,38 +310,33 @@ function createModeTool(
       + 'The level persists in the user settings document. '
       + 'Call with no arguments to report the current level.',
     parameters: {
-      type: 'object',
-      properties: {
-        mode: {
-          type: 'string',
-          enum: [...VALID_MODES],
-          description: 'Level to activate. Omit to report the current level.',
-        },
+      mode: {
+        type: 'string',
+        enum: [...VALID_MODES],
+        description: 'Level to activate. Omit to report the current level.',
       },
-      additionalProperties: false,
     },
     output: {
       schema: {
         type: 'object',
-        properties: {
-          mode: { type: 'string', enum: [...VALID_MODES] },
-          previous: { type: 'string', enum: [...VALID_MODES] },
-          changed: { type: 'boolean' },
-          active: { type: 'boolean' },
-        },
-        required: ['mode', 'previous', 'changed', 'active'],
         additionalProperties: false,
+        properties: {
+          mode: { type: 'string', enum: [...VALID_MODES], required: true },
+          previous: { type: 'string', enum: [...VALID_MODES], required: true },
+          changed: { type: 'boolean', required: true },
+          active: { type: 'boolean', required: true },
+        },
       },
       render: (_args, value) => [{ type: 'text', text: renderModeResult(value) }],
     },
-    async execute(args) {
+    async execute(args, exec) {
       const requested = readModeArgument(args)
       const previous = getMode()
       if (requested === undefined) {
         return { mode: previous, previous, changed: false, active: previous !== 'off' }
       }
 
-      const applied = await setMode(requested)
+      const applied = await setMode(requested, exec.signal)
       return {
         mode: applied.mode,
         previous: applied.previous,
@@ -300,12 +344,15 @@ function createModeTool(
         active: applied.mode !== 'off',
       }
     },
-  }
+  })
 }
 
 /**
- * Read the optional `mode` argument, validating it because raw definitions own
- * their input validation.
+ * Read the optional `mode` argument.
+ *
+ * `defineTool` already rejected a value outside the enum, so this is the
+ * narrow read for argument shapes that reach the body without that gate (the
+ * plugin's own tests, and any host that registers the definition directly).
  * @param args - losslessly snapshotted model arguments.
  * @returns the requested level, or `undefined` for a status query.
  */

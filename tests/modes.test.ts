@@ -77,3 +77,13 @@ test('buildModeInstructions drops the ruleset when off and points at review', ()
   assert.match(full, /^PONYTAIL MODE ACTIVE — level: full\n\n# The ladder/)
   assert.match(full, /stop at the first rung$/)
 })
+
+test('instruction caches are per-mount, so a second mount is never served the first body', () => {
+  const first = new Map<string, string>()
+  const second = new Map<string, string>()
+
+  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# first' }, first), /# first$/)
+  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# second' }, second), /# second$/)
+  // The first mount's cache still answers with its own body.
+  assert.match(buildModeInstructions({ mode: 'full', skillBody: '# second' }, first), /# first$/)
+})

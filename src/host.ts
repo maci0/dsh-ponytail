@@ -2,15 +2,15 @@
  * The slice of the DeepSeek Harness host surface this plugin uses, declared
  * structurally.
  *
- * The plugin is installed from outside the harness checkout, so it cannot
- * resolve `@deepseek-ai/*` packages from its own directory and deliberately
- * carries no runtime dependency on them. These interfaces describe the exact
- * contracts the plugin calls; the host types remain authoritative. Every
- * service is reached through `ctx.inject([...])`, so a composition that does
- * not mount one simply omits that capability.
+ * These interfaces describe the exact contracts the plugin calls; the host
+ * types remain authoritative, and every service is reached through
+ * `ctx.inject([...])`, so a composition that does not mount one simply omits
+ * that capability.
  *
  * @module dsh-ponytail/host
  */
+
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
 /** Disposer returned by every host registration. */
 export type Disposable = () => void
@@ -41,6 +41,8 @@ export interface SkillSummaryLike {
   readonly name: string
   /** Short routing description. */
   readonly description: string
+  /** Optional extra routing guidance, carried through from frontmatter. */
+  readonly whenToUse?: string
   /** Resolved invocation controls. */
   readonly invocation: SkillInvocationPolicyLike
   /** Discovery source bucket. */
@@ -49,6 +51,14 @@ export interface SkillSummaryLike {
   readonly provider: string
   /** Base for resources referenced by the loaded body. */
   readonly resourceBase?: { readonly kind: 'directory'; readonly path: string }
+}
+
+/** Caller context the registry borrows while a provider lists or loads. */
+export interface SkillLookupOptionsLike {
+  /** Workspace selector for the current lookup. */
+  readonly cwd?: string | undefined
+  /** Aborts discovery or loading work for the current caller. */
+  readonly signal?: AbortSignal | undefined
 }
 
 /** Provider catalog entry the registry merges and later loads. */
@@ -74,39 +84,9 @@ export interface SkillProviderLike {
   /** Unique provider name in the registry. */
   readonly name: string
   /** List candidates for the current lookup. */
-  list(): Promise<readonly SkillCandidateLike[]>
+  list(options?: SkillLookupOptionsLike): Promise<readonly SkillCandidateLike[]>
   /** Load a winning candidate's body, or `undefined` when it is gone. */
-  get(candidate: SkillCandidateLike): Promise<SkillDefinitionLike | undefined>
-}
-
-/** Model-facing content block. */
-export interface ContentBlockLike {
-  /** Only text rendering is produced by this plugin. */
-  readonly type: 'text'
-  /** Rendered text. */
-  readonly text: string
-}
-
-/** Canonical output declaration of a registered tool. */
-export interface ToolOutputLike {
-  /** Raw JSON Schema enforced against the canonical value. */
-  readonly schema: Record<string, unknown>
-  /** Pure projection from arguments and value to model-facing content. */
-  render(args: unknown, value: unknown): ContentBlockLike[]
-}
-
-/** A registered tool: schema plus body. */
-export interface ToolDefinitionLike {
-  /** Model-facing tool name. */
-  readonly name: string
-  /** Model-facing purpose. */
-  readonly description: string
-  /** Raw JSON Schema of the arguments. */
-  readonly parameters: Record<string, unknown>
-  /** Canonical output declaration. */
-  readonly output: ToolOutputLike
-  /** Run one accepted call; the raw definition owns its input validation. */
-  execute(args: unknown): Promise<unknown>
+  get(candidate: SkillCandidateLike, options?: SkillLookupOptionsLike): Promise<SkillDefinitionLike | undefined>
 }
 
 /** Invocation handed to a registered human command. */
@@ -158,11 +138,14 @@ export interface SessionEventLike {
  * Structural view of the Cordis context the plugin uses.
  *
  * Members are only reached inside the matching `inject` callback, where the
- * host guarantees the service is present.
+ * host guarantees the service is present, or through {@link HostContext.get}
+ * at the use site.
  */
 export interface HostContext {
-  /** Run `callback` once the named services are available. */
+  /** Run `callback` once the named services are available; the return is a fiber. */
   inject(dependencies: readonly string[], callback: (scope: HostContext) => void): unknown
+  /** Query a mounted service, or `undefined` while none is mounted. */
+  get(service: string): unknown
   /** Subscribe to a host event; the returned disposer removes the listener. */
   on(
     event: 'session/event',
@@ -175,7 +158,7 @@ export interface HostContext {
     registerProvider(create: () => SkillProviderLike): Disposable
   }
   readonly tools: {
-    register(definition: ToolDefinitionLike): Disposable
+    register(definition: ToolDefinition): Disposable
   }
   readonly commands: {
     register(definition: CommandDefinitionLike): Disposable

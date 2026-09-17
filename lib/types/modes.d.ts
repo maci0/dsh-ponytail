@@ -11,45 +11,29 @@
  *
  * @module dsh-ponytail/modes
  */
-
 /** Levels that change the always-on ruleset and may be persisted as a default. */
-export const RUNTIME_MODES = ['off', 'lite', 'full', 'ultra'] as const
-
+export declare const RUNTIME_MODES: readonly ['off', 'lite', 'full', 'ultra'];
 /** Every accepted level; `review` is session-only and never a valid default. */
-export const VALID_MODES = ['off', 'lite', 'full', 'ultra', 'review'] as const
-
+export declare const VALID_MODES: readonly ['off', 'lite', 'full', 'ultra', 'review'];
 /** A level that selects the always-on ruleset, or turns it off. */
-export type RuntimeMode = (typeof RUNTIME_MODES)[number]
-
+export type RuntimeMode = (typeof RUNTIME_MODES)[number];
 /** Any level the plugin accepts, including the independent `review` mode. */
-export type PonytailMode = (typeof VALID_MODES)[number]
-
+export type PonytailMode = (typeof VALID_MODES)[number];
 /** Level used when neither config nor environment sets one. */
-export const DEFAULT_MODE: RuntimeMode = 'full'
-
+export declare const DEFAULT_MODE: RuntimeMode;
 /**
  * Normalize a value to a level that may be persisted as a default.
  * @param value - candidate level from a config field, environment, or command.
  * @returns the canonical runtime level, or `undefined` when unrecognized.
  */
-export function normalizeMode(value: unknown): RuntimeMode | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase()
-  return RUNTIME_MODES.find((mode) => mode === normalized)
-}
-
+export declare function normalizeMode(value: unknown): RuntimeMode | undefined;
 /**
  * Normalize a value to any accepted level, including the session-only `review`.
  * Accepts the same human `/ponytail` command input as the tool argument.
  * @param value - candidate level.
  * @returns the canonical level, or `undefined` when unrecognized.
  */
-export function normalizeCommandMode(value: unknown): PonytailMode | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase()
-  return VALID_MODES.find((mode) => mode === normalized)
-}
-
+export declare function normalizeCommandMode(value: unknown): PonytailMode | undefined;
 /**
  * Whether a whole message is a deactivation command.
  *
@@ -60,19 +44,14 @@ export function normalizeCommandMode(value: unknown): PonytailMode | undefined {
  * @param text - user message text.
  * @returns whether the message is the deactivation command.
  */
-export function isDeactivationCommand(text: string): boolean {
-  const normalized = String(text ?? '').trim().toLowerCase().replace(/[.!?\s]+$/, '')
-  return normalized === 'stop ponytail' || normalized === 'normal mode'
-}
-
+export declare function isDeactivationCommand(text: string): boolean;
 /** Inputs for {@link resolveDefaultMode}, all injectable for tests. */
 export interface DefaultModeSources {
-  /** Deployment default from this plugin's config field; wins over everything. */
-  readonly configured?: string | undefined
-  /** Environment lookup; defaults to `process.env`. */
-  readonly env?: Record<string, string | undefined> | undefined
+    /** Deployment default from this plugin's config field; wins over everything. */
+    readonly configured?: string | undefined;
+    /** Environment lookup; defaults to `process.env`. */
+    readonly env?: Record<string, string | undefined> | undefined;
 }
-
 /**
  * Resolve the level a fresh process starts in.
  *
@@ -81,16 +60,7 @@ export interface DefaultModeSources {
  * @param sources - injectable overrides for tests.
  * @returns the resolved startup level.
  */
-export function resolveDefaultMode(sources: DefaultModeSources = {}): RuntimeMode {
-  const configured = normalizeMode(sources.configured)
-  if (configured !== undefined) return configured
-
-  const envMode = normalizeMode((sources.env ?? process.env)['PONYTAIL_DEFAULT_MODE'])
-  if (envMode !== undefined) return envMode
-
-  return DEFAULT_MODE
-}
-
+export declare function resolveDefaultMode(sources?: DefaultModeSources): RuntimeMode;
 /**
  * Drop the intensity-table rows and worked examples that belong to other
  * levels.
@@ -104,37 +74,14 @@ export function resolveDefaultMode(sources: DefaultModeSources = {}): RuntimeMod
  * @param mode - the level to keep.
  * @returns the body with other levels' rows and examples removed.
  */
-export function filterSkillBodyForMode(body: string, mode: PonytailMode): string {
-  const effective = normalizeMode(mode) ?? DEFAULT_MODE
-
-  return String(body ?? '')
-    .split(/\r?\n/)
-    .filter((line) => {
-      const tableLabel = /^\|\s*\*\*(.+?)\*\*\s*\|/.exec(line)
-      if (tableLabel?.[1] !== undefined) {
-        const labelMode = normalizeMode(tableLabel[1].trim())
-        if (labelMode !== undefined) return labelMode === effective
-      }
-
-      const exampleLabel = /^-\s*([^:]+):\s*"/.exec(line)
-      if (exampleLabel?.[1] !== undefined) {
-        const labelMode = normalizeMode(exampleLabel[1].trim())
-        if (labelMode !== undefined) return labelMode === effective
-      }
-
-      return true
-    })
-    .join('\n')
-}
-
+export declare function filterSkillBodyForMode(body: string, mode: PonytailMode): string;
 /** Inputs for {@link buildModeInstructions}. */
 export interface InstructionInput {
-  /** Active level. */
-  readonly mode: PonytailMode
-  /** `skills/ponytail/SKILL.md` body with its frontmatter already removed. */
-  readonly skillBody: string
+    /** Active level. */
+    readonly mode: PonytailMode;
+    /** `skills/ponytail/SKILL.md` body with its frontmatter already removed. */
+    readonly skillBody: string;
 }
-
 /**
  * Build the exact text the system prompt carries for one level.
  *
@@ -147,23 +94,4 @@ export interface InstructionInput {
  * @param cache - optional caller-owned cache of built blocks.
  * @returns the instruction block, or `''` when the level is `off`.
  */
-export function buildModeInstructions(input: InstructionInput, cache?: Map<string, string>): string {
-  const { mode } = input
-  if (mode === 'off') return ''
-
-  if (mode === 'review') {
-    return (
-      'PONYTAIL MODE ACTIVE — level: review. Behavior defined by the `ponytail-review`' +
-      ' skill; load it with the skill tool.'
-    )
-  }
-
-  const effective = normalizeMode(mode) ?? DEFAULT_MODE
-  const cached = cache?.get(effective)
-  if (cached !== undefined) return cached
-
-  const built = 'PONYTAIL MODE ACTIVE — level: ' + effective + '\n\n' +
-    filterSkillBodyForMode(input.skillBody, effective)
-  cache?.set(effective, built)
-  return built
-}
+export declare function buildModeInstructions(input: InstructionInput, cache?: Map<string, string>): string;

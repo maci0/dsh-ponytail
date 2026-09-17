@@ -10,26 +10,34 @@
 
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
+import { BUNDLED_SKILL_RANK, isSkillName } from '@deepseek-ai/dsh-skill'
 import { parseFrontmatter } from './frontmatter.ts'
 import type {
   SkillCandidateLike,
   SkillDefinitionLike,
+  SkillLookupOptionsLike,
   SkillProviderLike,
   SkillSummaryLike,
 } from './host.ts'
 
-/** Rank matching a harness bundled skill (600), so a project-level or user-level
- * skill of the same name still wins the duplicate. */
-export const BUNDLED_SKILL_RANK = 600
-
 /** Provider name inside the skill registry. */
 const PROVIDER_NAME = 'ponytail'
 
-/** The grammar the registry enforces for skill names. */
-const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
 /** Instruction file every skill directory must carry. */
 const INSTRUCTION_FILE = 'SKILL.md'
+
+/**
+ * Frontmatter keys that project onto a summary field rather than provider
+ * metadata. `disable-model-invocation`/`user-invocable` resolve into
+ * `invocation`, so they never ride along as provider-specific keys.
+ */
+const INVOCATION_KEYS = new Set([
+  'name',
+  'description',
+  'whenToUse',
+  'disable-model-invocation',
+  'user-invocable',
+])
 
 /** One parsed bundled skill. */
 export interface PonytailSkill {
@@ -37,14 +45,31 @@ export interface PonytailSkill {
   readonly name: string
   /** Routing description from frontmatter. */
   readonly description: string
+  /** Optional extra routing guidance from frontmatter. */
+  readonly whenToUse?: string
+  /** Resolved model and user invocation controls. */
+  readonly invocation: { readonly modelInvocable: boolean; readonly userInvocable: boolean }
   /** Instruction body with frontmatter removed. */
   readonly content: string
-  /** Remaining frontmatter keys (`argument-hint`, `license`, …). */
-  readonly metadata: Readonly<Record<string, string>>
+  /** Remaining provider-specific keys (`argument-hint`, `license`, …). */
+  readonly metadata: Readonly<Record<string, unknown>>
   /** Absolute path of the instruction file. */
   readonly path: string
   /** Absolute path of the skill directory, used as the resource base. */
   readonly directory: string
+}
+
+/**
+ * Read one frontmatter value as a trimmed string.
+ * @param value - YAML-parsed value, of any shape.
+ * @returns the trimmed string, or `undefined` when the value is missing or a collection.
+ */
+function scalar(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value)
+  }
+  return undefined
 }
 
 /** Options for {@link createSkillProvider}. */
@@ -84,10 +109,11 @@ export async function readSkillFile(
   }
 
   const fallback = entryName ?? basename(path)
-  const name = (parsed.data['name'] ?? fallback).trim()
-  const description = (parsed.data['description'] ?? '').trim()
+  const name = scalar(parsed.data['name']) ?? fallback
+  const description = scalar(parsed.data['description']) ?? ''
+  const whenToUse = scalar(parsed.data['whenToUse'])
 
-  if (!SKILL_NAME.test(name)) {
+  if (!isSkillName(name)) {
     onWarn?.(`skipping ${path}: "${name}" is not a valid kebab-case skill name`)
     return undefined
   }
@@ -96,15 +122,23 @@ export async function readSkillFile(
     return undefined
   }
 
-  const metadata: Record<string, string> = {}
+  const metadata: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(parsed.data)) {
-    if (key === 'name' || key === 'description') continue
+    if (INVOCATION_KEYS.has(key)) continue
     metadata[key] = value
   }
 
   return {
     name,
+    ...(whenToUse === undefined ? {} : { whenToUse }),
     description,
+    // Only the literal `true` disables the model surface and only the literal
+    // `false` disables the human one: an absent or malformed flag keeps the
+    // permissive default, so a typo advertises a skill instead of hiding it.
+    invocation: {
+      modelInvocable: parsed.data['disable-model-invocation'] !== true,
+      userInvocable: parsed.data['user-invocable'] !== false,
+    },
     content: parsed.body.trim(),
     metadata,
     path,
@@ -115,10 +149,10 @@ export async function readSkillFile(
 /**
  * Read every valid skill directory under `skillsDir`.
  *
- * A missing directory, a directory without `SKILL.md`, a file whose frontmatter
- * the reader refuses, and a file with a missing description are reported
- * through `onWarn` and skipped: one broken file must not cost the catalog its
- * other skills.
+ * A missing directory, a directory without `SKILL.md`, a file with unreadable
+ * frontmatter, and a file with a missing description are reported through
+ * `onWarn` and skipped: one broken file must not cost the catalog its other
+ * skills.
  * @param skillsDir - directory holding one subdirectory per skill.
  * @param onWarn - optional non-fatal problem sink.
  * @returns the parsed skills, sorted by name.
@@ -157,7 +191,8 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
     path: skill.path,
     name: skill.name,
     description: skill.description,
-    invocation: { modelInvocable: true, userInvocable: true },
+    ...(skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse }),
+    invocation: skill.invocation,
     source: 'bundled',
     provider: PROVIDER_NAME,
     resourceBase: { kind: 'directory', path: skill.directory },
@@ -166,8 +201,14 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
   return {
     name: PROVIDER_NAME,
 
-    async list(): Promise<readonly SkillCandidateLike[]> {
+    // The packaged skills are immutable in place, so there is nothing to
+    // invalidate and no watcher to own. `list`/`get` honor the caller's abort
+    // signal only at their own await boundaries: a caller that aborts mid-read
+    // gets no candidates rather than a later answer it stopped waiting for.
+    async list(lookup: SkillLookupOptionsLike = {}): Promise<readonly SkillCandidateLike[]> {
+      if (lookup.signal?.aborted) return []
       const skills = await discoverSkills(options.skillsDir, options.onWarn)
+      if (lookup.signal?.aborted) return []
       return skills.map((skill) => ({
         ...summaryOf(skill),
         rank: BUNDLED_SKILL_RANK,
@@ -176,13 +217,15 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
       }))
     },
 
-    async get(candidate: SkillCandidateLike): Promise<SkillDefinitionLike | undefined> {
+    async get(candidate: SkillCandidateLike, lookup: SkillLookupOptionsLike = {}): Promise<SkillDefinitionLike | undefined> {
       if (typeof candidate.locator !== 'string') return undefined
+      if (lookup.signal?.aborted) return undefined
 
       // Read the locator directly: one file instead of a full re-discovery.
       // The name check keeps a stale candidate (path reused by another skill)
       // from loading under the wrong identity.
       const skill = await readSkillFile(candidate.locator, options.onWarn)
+      if (lookup.signal?.aborted) return undefined
       if (skill === undefined || skill.name !== candidate.name) return undefined
 
       return { ...summaryOf(skill), content: skill.content, metadata: skill.metadata }
