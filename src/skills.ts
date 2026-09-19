@@ -102,7 +102,7 @@ async function readSkillFile(
   }
 
   // `parseFrontmatter` surfaces a malformed block as empty data, never a throw.
-  const parsed = parseFrontmatter(source)
+  const parsed = await parseFrontmatter(source)
 
   const fallback = entryName ?? basename(path)
   const name = scalar(parsed.data['name']) ?? fallback
@@ -194,6 +194,29 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
     resourceBase: { kind: 'directory', path: skill.directory },
   })
 
+  /**
+   * Discovery result per skills directory, keyed by directory.
+   *
+   * A packaged `skills/` tree is immutable in place, so a discovery that
+   * completed has nothing that could invalidate it: the entry is bounded by the
+   * number of directories this provider was built for, which is one. A call
+   * that was aborted is never stored, so it keeps re-reading the tree.
+   */
+  const catalogs = new Map<string, Promise<readonly PonytailSkill[]>>()
+
+  const discoverOnce = (signal?: AbortSignal): Promise<readonly PonytailSkill[]> => {
+    const cached = catalogs.get(options.skillsDir)
+    if (cached !== undefined) return cached
+    const pending = discoverSkills(options.skillsDir, options.onWarn)
+    // Store after the read settles, and only while the caller still wants it:
+    // an aborted call must read the tree on its next attempt.
+    pending.then(
+      () => { if (signal?.aborted !== true) catalogs.set(options.skillsDir, pending) },
+      () => {},
+    )
+    return pending
+  }
+
   return {
     name: PROVIDER_NAME,
 
@@ -203,7 +226,7 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
     // gets no candidates rather than a later answer it stopped waiting for.
     async list(lookup: SkillLookupOptions = {}): Promise<readonly SkillCandidate[]> {
       if (lookup.signal?.aborted) return []
-      const skills = await discoverSkills(options.skillsDir, options.onWarn)
+      const skills = await discoverOnce(lookup.signal)
       if (lookup.signal?.aborted) return []
       return skills.map((skill) => ({
         ...summaryOf(skill),

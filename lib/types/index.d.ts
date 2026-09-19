@@ -24,12 +24,6 @@ import type { HostContext } from './host.ts';
 /** Plugin name as it appears in the loader. */
 export declare const name = "ponytail";
 /**
- * Settings namespace the browser card edits — the join key between this host
- * half and `lib/client.js`. The card registers into `settings.plugin.item`
- * under the same key, and the tab pairs the two without knowing what it means.
- */
-export declare const PONYTAIL_SETTINGS_NAMESPACE = "ponytail";
-/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
  * The level is defaulted in the schema below, so the loader fills an absent

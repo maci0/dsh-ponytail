@@ -37,7 +37,7 @@ import {
   type RuntimeMode,
 } from './modes.ts'
 import { createSkillProvider } from './skills.ts'
-import { parseFrontmatter } from './frontmatter.ts'
+import { splitFrontmatter } from './frontmatter.ts'
 import type {
   CommandInvocationLike,
   CommandResultLike,
@@ -54,7 +54,7 @@ export const name = 'ponytail'
  * half and `lib/client.js`. The card registers into `settings.plugin.item`
  * under the same key, and the tab pairs the two without knowing what it means.
  */
-export const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
+const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
 
 /**
  * Persisted configuration. `review` is deliberately absent: it is a
@@ -94,7 +94,25 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   // frontmatter must not have to be re-read for every request. A missing body
   // means a broken install: fail while loading rather than injecting a silently
   // truncated ruleset.
-  const skillBody = parseFrontmatter(readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')).body.trimStart()
+  const skillBody = splitFrontmatter(readFileSync(join(skillsDir, 'ponytail', 'SKILL.md'), 'utf8')).body.trimStart()
+
+  /**
+   * The mode-filtered ruleset, keyed by level.
+   *
+   * The body above is parsed once and never re-read, so the filter's result is
+   * a pure function of the level: at most one entry per accepted level, filled
+   * on first use and never invalidated, because nothing that feeds it can
+   * change while the plugin is mounted.
+   */
+  const instructionsByMode = new Map<PonytailMode, string>()
+  const modeInstructions = (mode: PonytailMode): string => {
+    let text = instructionsByMode.get(mode)
+    if (text === undefined) {
+      text = buildModeInstructions({ mode, skillBody })
+      instructionsByMode.set(mode, text)
+    }
+    return text
+  }
 
   const warn = (message: string): void => {
     console.warn(`[ponytail] ${message}`)
@@ -199,7 +217,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
       order: 700, // after the persona prefix, before tool guidance
       // Evaluated at each assembly, so a level change lands on the next request.
       // `off` returns empty text, which assembly drops.
-      text: () => buildModeInstructions({ mode: activeMode(), skillBody }),
+      text: () => modeInstructions(activeMode()),
     })
   })
 

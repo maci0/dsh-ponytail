@@ -75,6 +75,10 @@ export function resolveDefaultMode(configured?: unknown): RuntimeMode {
   return normalizeMode(configured) ?? DEFAULT_MODE
 }
 
+/** The two mode-keyed line shapes, hoisted so the filter does not recompile them. */
+const TABLE_LABEL = /^\|\s*\*\*(.+?)\*\*\s*\|/
+const EXAMPLE_LABEL = /^-\s*([^:]+):\s*"/
+
 /**
  * Drop the intensity-table rows and worked examples that belong to other
  * levels.
@@ -94,13 +98,18 @@ export function filterSkillBodyForMode(body: string, mode: PonytailMode): string
   return String(body ?? '')
     .split(/\r?\n/)
     .filter((line) => {
-      const tableLabel = /^\|\s*\*\*(.+?)\*\*\s*\|/.exec(line)
+      // Both labels start their line, so one character rules out the common
+      // prose line before either regex runs. Same rows, same output.
+      const head = line.charCodeAt(0)
+      if (head !== 0x7c && head !== 0x2d) return true
+
+      const tableLabel = TABLE_LABEL.exec(line)
       if (tableLabel?.[1] !== undefined) {
         const labelMode = normalizeMode(tableLabel[1].trim())
         if (labelMode !== undefined) return labelMode === effective
       }
 
-      const exampleLabel = /^-\s*([^:]+):\s*"/.exec(line)
+      const exampleLabel = EXAMPLE_LABEL.exec(line)
       if (exampleLabel?.[1] !== undefined) {
         const labelMode = normalizeMode(exampleLabel[1].trim())
         if (labelMode !== undefined) return labelMode === effective

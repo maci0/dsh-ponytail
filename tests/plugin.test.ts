@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { apply, PONYTAIL_SETTINGS_NAMESPACE } from '../src/index.ts'
+import { apply } from '../src/index.ts'
 import type {
   CommandDefinitionLike,
   HostContext,
@@ -11,6 +11,8 @@ import type {
   SettingsSectionHooksLike,
   SkillProviderLike,
 } from '../src/host.ts'
+
+const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
 
 interface InstallRecord {
   readonly namespace: string

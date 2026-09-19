@@ -8,6 +8,7 @@ import {
   normalizeMode,
   resolveDefaultMode,
 } from '../src/modes.ts'
+import { apply } from '../src/index.ts'
 
 test('normalizeMode accepts only runtime levels', () => {
   assert.equal(normalizeMode('ULTRA'), 'ultra')
@@ -75,4 +76,58 @@ test('buildModeInstructions drops the ruleset when off and points at review', ()
   const full = buildModeInstructions({ mode: 'full', skillBody: '# The ladder\n\nstop at the first rung' })
   assert.match(full, /^PONYTAIL MODE ACTIVE — level: full\n\n# The ladder/)
   assert.match(full, /stop at the first rung$/)
+})
+
+test('the injected section reuses one filtered ruleset per level', { timeout: 120_000 }, () => {
+  // `assemble` resolves the section text on every request, and the body is
+  // read once at load, so repeated assemblies at one level must not re-filter
+  // it. The counter is CPU time over many assemblies: a memoized section costs
+  // ~0.1us per call, a re-filtered one ~10us, so the band holds on a loaded
+  // machine while still failing if the memo disappears.
+  const sections: { text: string | (() => string) }[] = []
+  const services: Record<string, unknown> = {
+    systemPrompt: { section: (section: unknown) => { sections.push(section as { text: () => string }); return () => {} } },
+    skills: { registerProvider: () => () => {} },
+    tools: { register: () => () => {} },
+    commands: { register: () => () => {} },
+    settings: {
+      installSection: (_owner: unknown, _ns: unknown, _schema: unknown, entry: unknown, hooks: { setSource: (s: () => unknown) => void; onChange: () => void }) => {
+        hooks.setSource(() => ({ ...(entry as Record<string, unknown>) }))
+        hooks.onChange()
+      },
+      update: async () => {},
+    },
+  }
+  const ctx = {
+    inject: (deps: readonly string[], callback: (scope: unknown) => void) => {
+      const scope: Record<string, unknown> = { ...ctx }
+      for (const dep of deps) scope[dep] = services[dep]
+      callback(scope)
+      return () => {}
+    },
+    get: (service: string) => services[service],
+    on: () => () => {},
+    ...services,
+  }
+  apply(ctx as never)
+
+  const section = sections[0]
+  assert.ok(section, 'the plugin registers one system-prompt section')
+  const text = section.text as () => string
+  text()
+
+  const calls = 20_000
+  const budget = 60_000 // microseconds: recorded p50 ~2.9ms, uncached ~190ms
+  const before = process.cpuUsage()
+  let rendered = ''
+  for (let i = 0; i < calls; i += 1) rendered = text()
+  const used = process.cpuUsage(before)
+  const perCall = (used.user + used.system) / calls
+
+  assert.match(rendered, /^PONYTAIL MODE ACTIVE — level: full\n\n/)
+  assert.ok(
+    perCall < budget / calls,
+    `${calls} assemblies cost ${(used.user + used.system).toFixed(0)}us; `
+    + 'a section that re-filters the body per assembly costs tens of milliseconds',
+  )
 })
