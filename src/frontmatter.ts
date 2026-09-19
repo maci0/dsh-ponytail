@@ -22,7 +22,7 @@ interface Frontmatter {
   readonly body: string
 }
 
-const DELIMITER = /^---[ \t]*$/
+const FRONTMATTER_BLOCK = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/
 
 /**
  * Parse leading YAML frontmatter from a markdown document.
@@ -31,25 +31,13 @@ const DELIMITER = /^---[ \t]*$/
  */
 export function parseFrontmatter(source: string): Frontmatter {
   const text = source.replace(/^\uFEFF/, '')
-  const lines = text.split(/\r?\n/)
+  const match = FRONTMATTER_BLOCK.exec(text)
+  if (match === null) return { data: {}, body: text }
 
-  if (lines[0] === undefined || !DELIMITER.test(lines[0])) {
-    return { data: {}, body: text }
-  }
-
-  let closing = -1
-  for (let index = 1; index < lines.length; index += 1) {
-    if (DELIMITER.test(lines[index] ?? '')) {
-      closing = index
-      break
-    }
-  }
-  if (closing === -1) {
-    return { data: {}, body: text }
-  }
-
-  const block = lines.slice(1, closing).join('\n')
-  return { data: parseBlock(block), body: lines.slice(closing + 1).join('\n') }
+  // The body keeps its own bytes apart from line terminators, which are
+  // normalized to `\n`.
+  const body = text.slice(match[0].length).replace(/\r\n/g, '\n')
+  return { data: parseBlock(match[1] ?? ''), body }
 }
 
 /**

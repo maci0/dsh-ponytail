@@ -55,6 +55,19 @@ test('parseFrontmatter reads quoted scalars and leaves a bodyless file alone', (
   assert.equal(unterminated.body, '---\nname: x\n')
 })
 
+test('parseFrontmatter handles CRLF files', () => {
+  const parsed = parseFrontmatter('---\r\nname: x\r\ndescription: y\r\n---\r\nbody\r\n')
+  assert.equal(parsed.data['name'], 'x')
+  assert.equal(parsed.data['description'], 'y')
+  assert.equal(parsed.body, 'body\n')
+
+  // CRLF delimiters alone are not enough — an unterminated block keeps the
+  // whole source as the body.
+  const unterminated = parseFrontmatter('---\r\nname: x\r\n')
+  assert.deepEqual(unterminated.data, {})
+  assert.equal(unterminated.body, '---\r\nname: x\r\n')
+})
+
 test('parseFrontmatter reads literal and chomped block scalars', () => {
   const literal = parseFrontmatter('---\nname: x\ndescription: |\n  one\n  two\n---\nbody\n')
   assert.equal(literal.data['description'], 'one\ntwo\n')
