@@ -8,25 +8,17 @@ import type {
   HostContext,
   PromptSectionContribution,
   SessionEventLike,
-  SettingsSectionHooksLike,
   SkillProviderLike,
 } from '../src/host.ts'
+import type { RuntimeMode } from '../src/modes.ts'
 
 const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
-
-interface InstallRecord {
-  readonly namespace: string
-  readonly schema: unknown
-  readonly entry: unknown
-  readonly hooks: SettingsSectionHooksLike
-}
 
 interface Captured {
   readonly sections: PromptSectionContribution[]
   readonly providers: SkillProviderLike[]
   readonly tools: ToolDefinition[]
   readonly commands: CommandDefinitionLike[]
-  readonly installs: InstallRecord[]
   readonly updates: { namespace: string; patch: Record<string, unknown> }[]
 }
 
@@ -36,16 +28,14 @@ function createHost(
 ): {
   ctx: HostContext
   captured: Captured
-  config: { defaultMode: string }
+  config: { defaultMode: RuntimeMode }
   emit: (event: SessionEventLike) => void
   emitVolatile: () => void
 } {
   const captured: Captured = {
-    sections: [], providers: [], tools: [], commands: [], installs: [], updates: [],
+    sections: [], providers: [], tools: [], commands: [], updates: [],
   }
-  let base: Record<string, unknown> = {}
-  let user: Record<string, unknown> = {}
-  const row = { defaultMode: 'full' }
+  const row: { defaultMode: RuntimeMode } = { defaultMode: 'full' }
   const volatileListeners: Array<() => void> = []
 
   const services = {
@@ -74,28 +64,13 @@ function createHost(
       },
     },
     settings: {
-      installSection: (
-        _owner: unknown,
-        namespace: string,
-        schema: unknown,
-        entry: unknown,
-        hooks: SettingsSectionHooksLike,
-      ): void => {
-        base = entry as Record<string, unknown>
-        captured.installs.push({ namespace, schema, entry, hooks })
-        // The real service hands over a thunk reading the resolved layers.
-        hooks.setSource(() => ({ ...base, ...user }))
-        hooks.onChange()
-      },
       update: async (namespace: string, patch: Record<string, unknown>): Promise<void> => {
         if (options.failUpdate === true) throw new Error('settings document is read-only')
         if (options.updateDelayMs !== undefined) {
           await new Promise((resolve) => { setTimeout(resolve, options.updateDelayMs) })
         }
         captured.updates.push({ namespace, patch })
-        if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode']
-        if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode']
-        user = { ...user, ...patch }
+        if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode'] as RuntimeMode
       },
     },
   }

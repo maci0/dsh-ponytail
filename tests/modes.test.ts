@@ -91,10 +91,6 @@ test('the injected section reuses one filtered ruleset per level', { timeout: 12
     tools: { register: () => () => {} },
     commands: { register: () => () => {} },
     settings: {
-      installSection: (_owner: unknown, _ns: unknown, _schema: unknown, entry: unknown, hooks: { setSource: (s: () => unknown) => void; onChange: () => void }) => {
-        hooks.setSource(() => ({ ...(entry as Record<string, unknown>) }))
-        hooks.onChange()
-      },
       update: async () => {},
     },
   }

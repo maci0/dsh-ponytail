@@ -119,17 +119,6 @@ export interface HostContext {
     };
     readonly settings: SettingsServiceLike;
 }
-/** Hooks a consumer hands to `settings.installSection`. */
-export interface SettingsSectionHooksLike {
-    /**
-     * Receive the active configuration source: the resolved settings scope while
-     * one is attached, the composition entry otherwise. Called before the
-     * matching `onChange` at attach and at detach.
-     */
-    setSource(current: () => unknown): void;
-    /** Re-judge anything derived from the source after an attach, detach, or commit. */
-    onChange(): void;
-}
 /** The slice of the settings service this plugin uses. */
 export interface SettingsServiceLike {
     /**
