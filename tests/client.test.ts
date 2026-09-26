@@ -69,11 +69,11 @@ function loadBundle(snapshot: Snapshot, calls: { set: unknown[][]; unset: unknow
   }
   const registeredLocales: string[] = []
 
-  const bound: Record<string, unknown>[] = []
+  const bound: string[] = []
   const injected: string[] = []
   const registered: { entry: Record<string, unknown>; component: () => Element | null }[] = []
   const ctx = {
-    settingsScope: { bind: (spec: Record<string, unknown>) => { bound.push(spec); return scope } },
+    configForms: { get: (namespace: string) => { bound.push(namespace); return scope } },
     locale: {
       register: (ns: string, dicts: Record<string, Record<string, string>>): (() => void) => {
         registeredLocales.push(ns)
@@ -111,9 +111,9 @@ function loadBundle(snapshot: Snapshot, calls: { set: unknown[][]; unset: unknow
 
 /** The component registered into one slot, by slot name. */
 function componentFor(
-  registered: { entry: Record<string, unknown>; component: () => Element | null }[],
+  registered: { entry: Record<string, unknown>; component: (props?: { view?: string }) => Element | string | null }[],
   slot: string,
-): () => Element | null {
+): (props?: { view?: string }) => Element | string | null {
   const found = registered.filter((entry) => entry.entry['name'] === slot)[0]
   assert.ok(found, `no component registered into ${slot}`)
   return found.component
@@ -135,9 +135,9 @@ function walk(node: unknown, found: Element[] = []): Element[] {
 }
 
 /** Render one component through the stub, resetting its hook cursor. */
-function render(react: ReactStub, component: () => Element | null): Element[] {
+function render(react: ReactStub, component: (props?: { view?: string }) => Element | string | null, view = 'page'): Element[] {
   react.reset()
-  return walk(component())
+  return walk(component({ view }))
 }
 
 function buttons(tree: Element[]): Element[] {
@@ -148,27 +148,25 @@ function radios(tree: Element[]): Element[] {
   return tree.filter((element) => element.props['role'] === 'radio')
 }
 
-/** Expand the collapsed card and render it open. */
-function expand(react: ReactStub, component: () => Element | null): Element[] {
-  const collapsed = render(react, component)
-  ;(buttons(collapsed)[0]?.props['onClick'] as () => void)()
-  return render(react, component)
+/** Render the row configuration page. */
+function page(react: ReactStub, component: (props?: { view?: string }) => Element | string | null): Element[] {
+  return render(react, component, 'page')
 }
 
 test('the card binds the ponytail namespace and registers into the plugins tab', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { exported, bound, injected, registered, registeredLocales } = loadBundle(
-    { status: 'ready', value: { mode: 'lite' }, user: { mode: 'lite' }, writable: true },
+    { status: 'ready', value: { defaultMode: 'lite' }, user: { defaultMode: 'lite' }, writable: true },
     calls,
   )
 
-  assert.deepEqual(exported['inject'], ['slots', 'settingsScope', 'locale'])
-  assert.deepEqual(bound, [{ namespace: 'ponytail' }])
-  assert.deepEqual(injected, ['settings.plugin.item', 'conversation.input.left'])
+  assert.deepEqual(exported['inject'], ['slots', 'configForms', 'locale'])
+  assert.deepEqual(bound, ['ponytail'])
+  assert.deepEqual(injected, ['plugins.row.config', 'conversation.input.left'])
   assert.deepEqual(registeredLocales, ['ponytail'])
   assert.equal(registered.length, 2)
-  assert.equal(registered[0]?.entry['name'], 'settings.plugin.item')
-  assert.equal(registered[0]?.entry['key'], 'ponytail')
+  assert.equal(registered[0]?.entry['name'], 'plugins.row.config')
+  assert.equal(registered[0]?.entry['key'], 'dsh-ponytail#ponytail')
   // The slot contract's `locale` field: the namespace the framework binds the
   // card's `t` seat to, which is the dictionary registered above.
   assert.equal(registered[0]?.entry['locale'], 'ponytail')
@@ -176,78 +174,70 @@ test('the card binds the ponytail namespace and registers into the plugins tab',
   assert.equal(registered[1]?.entry['id'], 'ponytail-level')
 })
 
-test('the card renders collapsed, naming the plugin and the current level', () => {
+test('the summary is the live level line and the page is the level picker', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'lite' }, user: {}, writable: true },
+    { status: 'ready', value: { defaultMode: 'lite' }, user: {}, writable: true },
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
-  const tree = render(react, component)
+  const component = componentFor(registered, 'plugins.row.config')
+  react.reset()
+  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode — level: Lite.')
 
-  assert.equal(tree.filter((element) => element.type === 'li').length, 1)
-  assert.equal(buttons(tree).length, 1)
-  const header = buttons(tree)[0]
-  assert.ok(header)
-  assert.equal(header.props['aria-expanded'], false)
-  assert.equal(header.props['aria-label'], `Expand: Ponytail v${pkgVersion}`)
-  assert.deepEqual(radios(tree), [])
-
-  const text = tree
-    .filter((element) => typeof element.children[0] === 'string' && element.children.length === 1)
-    .map((element) => element.children[0])
-  assert.deepEqual(text, [`Ponytail v${pkgVersion}`, 'Lazy senior dev mode — level: Lite.'])
+  const tree = page(react, component)
+  assert.equal(tree.filter((element) => element.type === 'li').length, 0)
+  const levels = radios(tree)
+  assert.deepEqual(levels.map((radio) => radio.children[0]), ['Off', 'Lite', 'Full', 'Ultra'])
+  assert.deepEqual(levels.map((radio) => radio.props['aria-checked']), [false, true, false, false])
 })
 
-test('expanding reveals one radio per persisted level and writes the chosen one', () => {
+test('the page writes the chosen level', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'full' }, user: {}, writable: true },
+    { status: 'ready', value: { defaultMode: 'full' }, user: {}, writable: true },
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
-  const open = expand(react, component)
+  const component = componentFor(registered, 'plugins.row.config')
+  const open = page(react, component)
 
-  assert.equal(buttons(open)[0]?.props['aria-expanded'], true)
-  assert.equal(buttons(open)[0]?.props['aria-label'], `Collapse: Ponytail v${pkgVersion}`)
   const levels = radios(open)
   assert.deepEqual(levels.map((radio) => radio.children[0]), ['Off', 'Lite', 'Full', 'Ultra'])
   assert.deepEqual(levels.map((radio) => radio.props['aria-checked']), [false, false, true, false])
 
   ;(levels[3]?.props['onClick'] as () => void)()
-  assert.deepEqual(calls.set, [['mode', 'ultra']])
+  assert.deepEqual(calls.set, [['defaultMode', 'ultra']])
 })
 
 test('an overridden level is called out and offers a reset', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'ultra' }, user: { mode: 'ultra' }, writable: true },
+    { status: 'ready', value: { defaultMode: 'ultra' }, user: { defaultMode: 'ultra' }, writable: true },
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
-  const open = expand(react, component)
+  const component = componentFor(registered, 'plugins.row.config')
+  const open = page(react, component)
 
-  const text = open.map((element) => element.children[0])
-  assert.ok(text.includes('Lazy senior dev mode — level: Ultra (overridden).'))
+  react.reset()
+  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode — level: Ultra (overridden).')
 
   const reset = buttons(open).find((button) => button.children[0] === 'Reset')
   assert.ok(reset, 'the reset control renders while the field is overridden')
   ;(reset.props['onClick'] as () => void)()
-  assert.deepEqual(calls.unset, [['mode']])
+  assert.deepEqual(calls.unset, [['defaultMode']])
 })
 
 test('the card disables its controls when the host document is not writable', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'full' }, user: {}, writable: false },
+    { status: 'ready', value: { defaultMode: 'full' }, user: {}, writable: false },
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
-  const open = expand(react, component)
+  const component = componentFor(registered, 'plugins.row.config')
+  const open = page(react, component)
 
   const levels = radios(open)
   assert.equal(levels.length, 4)
@@ -261,7 +251,7 @@ test('an unavailable namespace renders no trace of the card', () => {
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
+  const component = componentFor(registered, 'plugins.row.config')
   react.reset()
   assert.equal(component(), null)
 })
@@ -269,12 +259,12 @@ test('an unavailable namespace renders no trace of the card', () => {
 test('the chrome is class-based, so no state change goes through React style diffing', () => {
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
   const { registered, react } = loadBundle(
-    { status: 'ready', value: { mode: 'lite' }, user: { mode: 'lite' }, writable: true },
+    { status: 'ready', value: { defaultMode: 'lite' }, user: { defaultMode: 'lite' }, writable: true },
     calls,
   )
 
-  const component = componentFor(registered, 'settings.plugin.item')
-  const open = expand(react, component)
+  const component = componentFor(registered, 'plugins.row.config')
+  const open = page(react, component)
 
   // An inline object is what let a removed longhand decompose a border
   // shorthand and blank a deselected pill; classes keep every state change out
@@ -284,7 +274,7 @@ test('the chrome is class-based, so no state change goes through React style dif
     assert.equal(typeof element.props['className'], 'string', `${element.type} carries no class`)
   }
 
-  assert.match(String(open.filter((element) => element.type === 'li')[0]?.props['className']), /dp-card-open/)
+  assert.match(String(open.filter((element) => element.type === 'div')[0]?.props['className']), /dp-page/)
 
   const pills = radios(open)
   assert.equal(pills.length, 4)
@@ -300,7 +290,7 @@ test('the composer chip states the level and vanishes when off or unavailable', 
   const calls = { set: [] as unknown[][], unset: [] as unknown[][] }
 
   const active = loadBundle(
-    { status: 'ready', value: { mode: 'ultra' }, user: {}, writable: true },
+    { status: 'ready', value: { defaultMode: 'ultra' }, user: {}, writable: true },
     calls,
   )
   const chip = render(active.react, componentFor(active.registered, 'conversation.input.left'))
@@ -310,7 +300,7 @@ test('the composer chip states the level and vanishes when off or unavailable', 
   assert.equal(chip[0]?.children[0], 'Ponytail: Ultra')
 
   const off = loadBundle(
-    { status: 'ready', value: { mode: 'off' }, user: { mode: 'off' }, writable: true },
+    { status: 'ready', value: { defaultMode: 'off' }, user: { defaultMode: 'off' }, writable: true },
     calls,
   )
   assert.deepEqual(render(off.react, componentFor(off.registered, 'conversation.input.left')), [])

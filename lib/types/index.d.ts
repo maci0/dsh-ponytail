@@ -24,6 +24,11 @@ import type { HostContext } from './host.ts';
 /** Plugin name as it appears in the loader. */
 export declare const name = "ponytail";
 /**
+ * Settings namespace the browser card edits — the join key between this host
+ * half and `lib/client.js`. The card registers into `plugins.item`
+ * under the same id, and the Plugins page pairs the two without knowing what it means.
+ */
+/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
  * The level is defaulted in the schema below, so the loader fills an absent
@@ -31,11 +36,17 @@ export declare const name = "ponytail";
  * fails at load, because the union rejects it.
  */
 export interface Config {
-    /** Startup level (`off`, `lite`, `full`, `ultra`). */
-    readonly defaultMode?: RuntimeMode;
+    /** Startup level (`off`, `lite`, `full`, `ultra`). Volatile on v0.1.7. */
+    readonly defaultMode?: RuntimeMode | {
+        readonly value: RuntimeMode | undefined;
+    };
 }
 /** Row schema: an absent level is filled by the loader before `apply`. */
-export declare const Config: z<Config>;
+export declare const Config: z<Schemastery.ObjectS<NoInfer<{
+    defaultMode: z<"full" | "lite" | "off" | "ultra", "full" | "lite" | "off" | "ultra", "volatile-defined">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    defaultMode: z<"full" | "lite" | "off" | "ultra", "full" | "lite" | "off" | "ultra", "volatile-defined">;
+}>>, "plain">;
 /**
  * Mount the plugin.
  * @param ctx - the host context.

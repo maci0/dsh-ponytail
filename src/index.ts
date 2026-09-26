@@ -51,19 +51,9 @@ export const name = 'ponytail'
 
 /**
  * Settings namespace the browser card edits — the join key between this host
- * half and `lib/client.js`. The card registers into `settings.plugin.item`
- * under the same key, and the tab pairs the two without knowing what it means.
+ * half and `lib/client.js`. The card registers into `plugins.item`
+ * under the same id, and the Plugins page pairs the two without knowing what it means.
  */
-const PONYTAIL_SETTINGS_NAMESPACE = 'ponytail'
-
-/**
- * Persisted configuration. `review` is deliberately absent: it is a
- * session-only review mode, not a level a deployment may start in.
- */
-const PonytailSettings = z.object({
-  mode: z.union([...RUNTIME_MODES]).default(DEFAULT_MODE),
-})
-
 /**
  * Configuration accepted from this plugin's row in a profile patch.
  *
@@ -72,13 +62,13 @@ const PonytailSettings = z.object({
  * fails at load, because the union rejects it.
  */
 export interface Config {
-  /** Startup level (`off`, `lite`, `full`, `ultra`). */
-  readonly defaultMode?: RuntimeMode
+  /** Startup level (`off`, `lite`, `full`, `ultra`). Volatile on v0.1.7. */
+  readonly defaultMode?: RuntimeMode | { readonly value: RuntimeMode | undefined }
 }
 
 /** Row schema: an absent level is filled by the loader before `apply`. */
-export const Config: z<Config> = z.object({
-  defaultMode: z.union([...RUNTIME_MODES]).default(DEFAULT_MODE),
+export const Config = z.object({
+  defaultMode: z.union([...RUNTIME_MODES]).default(DEFAULT_MODE).volatile(),
 })
 
 /**
@@ -89,7 +79,7 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: HostContext, config: Config = {}): void {
   // `<package>/skills`, resolved from this module's own location.
   const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
-  const startup = resolveDefaultMode(config.defaultMode)
+  const startup = resolveDefaultMode(plainMode(config.defaultMode))
   // Parsed once, at load: the ruleset is filtered per assembly, so the
   // frontmatter must not have to be re-read for every request. A missing body
   // means a broken install: fail while loading rather than injecting a silently
@@ -118,15 +108,15 @@ export function apply(ctx: HostContext, config: Config = {}): void {
     console.warn(`[ponytail] ${message}`)
   }
 
-  /** Session-local level, used when the settings document cannot hold the write. */
+  /** Session-local level, used when the profile write cannot hold the level. */
   let override: PonytailMode | undefined
-  /** Authoritative configuration source: the settings scope once attached, else the row. */
-  let source: () => unknown = () => ({ mode: startup })
+  /** Live row. v0.1.7 updates volatile fields in place. */
+  const source = (): unknown => config
 
   const configuredMode = (): PonytailMode | undefined => {
     const value = source()
     if (value === null || typeof value !== 'object') return undefined
-    return normalizeMode((value as { mode?: unknown }).mode)
+    return normalizeMode(plainMode((value as { defaultMode?: unknown }).defaultMode))
   }
 
   const activeMode = (): PonytailMode => override ?? configuredMode() ?? startup
@@ -150,9 +140,10 @@ export function apply(ctx: HostContext, config: Config = {}): void {
    */
   const persist = async (next: PonytailMode, signal?: AbortSignal): Promise<boolean> => {
     const settings = settingsService()
-    if (settings === undefined || normalizeMode(next) === undefined) return false
+    const id = entryId(ctx)
+    if (settings === undefined || id === undefined || normalizeMode(next) === undefined) return false
     try {
-      await abortable(settings.update(PONYTAIL_SETTINGS_NAMESPACE, { mode: next }), signal)
+      await abortable(settings.update(id, { defaultMode: next }), signal)
       return true
     } catch (error) {
       warn(`could not persist level "${next}": ${error instanceof Error ? error.message : String(error)}`)
@@ -189,26 +180,8 @@ export function apply(ctx: HostContext, config: Config = {}): void {
     })
   }
 
-  ctx.inject(['settings'], (scope) => {
-    // The section is an effect on this callback's fiber, so it unregisters with
-    // it; the service itself is re-queried at each use site instead of captured.
-    scope.settings.installSection(
-      ctx,
-      PONYTAIL_SETTINGS_NAMESPACE,
-      PonytailSettings,
-      { mode: startup },
-      {
-        setSource: (current) => {
-          source = current
-        },
-        // Fires at attach and after every committed change. A settings change
-        // supersedes a session-local override; the ruleset itself is re-read at
-        // each assembly, so there is nothing else to re-judge here.
-        onChange: () => {
-          override = undefined
-        },
-      },
-    )
+  ctx.on('loader/volatile-update', () => {
+    override = undefined
   })
 
   ctx.inject(['systemPrompt'], (scope) => {
@@ -428,4 +401,18 @@ async function handleModeCommand(
 
   const { previous, mode, changed } = await setMode(requested)
   return { kind: 'success', text: modeSentence(mode, previous, changed) }
+}
+
+/** Profile entry id of this plugin, when the loader mounted it. */
+function entryId(ctx: HostContext): string | undefined {
+  const id = ctx.fiber?.entry?.options?.id
+  return typeof id === 'string' ? id : undefined
+}
+
+/** Unwrap a v0.1.7 volatile ref. A plain value passes through. */
+function plainMode(value: unknown): unknown {
+  if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as { get: () => unknown }).get()
+  }
+  return value
 }

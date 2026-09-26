@@ -96,6 +96,15 @@ export interface HostContext {
     get(service: string): unknown;
     /** Subscribe to a host event; the returned disposer removes the listener. */
     on(event: 'session/event', listener: (session: unknown, event: SessionEventLike) => void): Disposable;
+    on(event: 'loader/volatile-update', listener: () => void): Disposable;
+    /** Owning fiber, present once the loader mounted this plugin. */
+    readonly fiber?: {
+        readonly entry?: {
+            readonly options?: {
+                readonly id?: string;
+            };
+        };
+    };
     readonly systemPrompt: {
         section(section: PromptSectionContribution): Disposable;
     };
@@ -124,15 +133,10 @@ export interface SettingsSectionHooksLike {
 /** The slice of the settings service this plugin uses. */
 export interface SettingsServiceLike {
     /**
-     * Register a namespace with the plugin's composition entry as the `base`
-     * layer, falling back to that entry when no provider is mounted.
+     * Merge fields into one profile entry. `ns` is the entry id.
+     * @param ns - profile entry id.
+     * @param patch - fields to write.
      */
-    installSection(owner: unknown, namespace: string, schema: unknown, entry: unknown, hooks: SettingsSectionHooksLike): void;
-    /**
-     * Deep-merge a plain-object patch into the namespace's user layer and persist it.
-     * @param namespace - a namespace this plugin registered.
-     * @param patch - fields to write; only the user layer is touched.
-     */
-    update(namespace: string, patch: Record<string, unknown>): Promise<void>;
+    update(ns: string, patch: Record<string, unknown>): Promise<void>;
 }
 export {};

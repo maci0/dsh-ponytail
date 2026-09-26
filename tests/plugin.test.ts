@@ -36,13 +36,17 @@ function createHost(
 ): {
   ctx: HostContext
   captured: Captured
+  config: { defaultMode: string }
   emit: (event: SessionEventLike) => void
+  emitVolatile: () => void
 } {
   const captured: Captured = {
     sections: [], providers: [], tools: [], commands: [], installs: [], updates: [],
   }
   let base: Record<string, unknown> = {}
   let user: Record<string, unknown> = {}
+  const row = { defaultMode: 'full' }
+  const volatileListeners: Array<() => void> = []
 
   const services = {
     systemPrompt: {
@@ -89,6 +93,8 @@ function createHost(
           await new Promise((resolve) => { setTimeout(resolve, options.updateDelayMs) })
         }
         captured.updates.push({ namespace, patch })
+        if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode']
+        if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode']
         user = { ...user, ...patch }
       },
     },
@@ -100,20 +106,24 @@ function createHost(
     ...services,
     // The real service disappears from `ctx.get` while its provider is unloaded;
     // `detachSettings` reproduces that without disposing the whole context.
+    fiber: { entry: { options: { id: PONYTAIL_SETTINGS_NAMESPACE } } },
     get: (service: string): unknown =>
       (service === 'settings' && options.detachSettings === true ? undefined : (services as Record<string, unknown>)[service]),
     inject: (_dependencies: readonly string[], callback: (scope: HostContext) => void): void => {
       callback(ctx as unknown as HostContext)
     },
-    on: (_event: string, listener: (session: unknown, event: SessionEventLike) => void): (() => void) => {
-      listeners.push(listener)
+    on: (event: string, listener: (...args: never[]) => void): (() => void) => {
+      if (event === 'loader/volatile-update') volatileListeners.push(listener as () => void)
+      else listeners.push(listener as (session: unknown, event: SessionEventLike) => void)
       return () => {}
     },
   }
   return {
     ctx: ctx as unknown as HostContext,
     captured,
+    config: row,
     emit: (event: SessionEventLike): void => { for (const listener of listeners) listener({}, event) },
+    emitVolatile: (): void => { for (const listener of volatileListeners) listener() },
   }
 }
 
@@ -142,7 +152,7 @@ async function callCommand(host: { captured: Captured }, rawInput: string) {
 
 test('apply mounts the section, provider, tool, command, and settings namespace', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   assert.equal(host.captured.sections[0]?.name, 'ponytail')
   assert.equal(host.captured.sections[0]?.order, 700)
@@ -151,20 +161,12 @@ test('apply mounts the section, provider, tool, command, and settings namespace'
   assert.equal(host.captured.providers.length, 1)
   assert.equal((await host.captured.providers[0]?.list())?.length, 6)
 
-  const install = host.captured.installs[0]
-  assert.ok(install)
-  assert.equal(install.namespace, PONYTAIL_SETTINGS_NAMESPACE)
-  assert.deepEqual(install.entry, { mode: 'full' })
-  // The settings service serializes `schema.toJSON()` for the browser half, so
-  // the namespace must carry a real schemastery schema.
-  assert.equal(typeof (install.schema as { toJSON?: unknown }).toJSON, 'function')
-
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full\n\n/)
 })
 
 test('the tool persists a level through the settings document', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   assert.deepEqual(await callTool(host, {}), {
     mode: 'full', previous: 'full', changed: false, active: true,
@@ -172,7 +174,7 @@ test('the tool persists a level through the settings document', async () => {
 
   const switched = await callTool(host, { mode: 'ultra' })
   assert.deepEqual(switched, { mode: 'ultra', previous: 'full', changed: true, active: true })
-  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'ultra' } }])
+  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { defaultMode: 'ultra' } }])
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: ultra\n\n/)
 
   const off = await callTool(host, { mode: 'off' })
@@ -189,7 +191,7 @@ test('the tool persists a level through the settings document', async () => {
 
 test('review stays session-local because it is not a persistable level', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   const review = await callTool(host, { mode: 'review' })
   assert.deepEqual(review, { mode: 'review', previous: 'full', changed: true, active: true })
@@ -198,14 +200,14 @@ test('review stays session-local because it is not a persistable level', async (
 
   // A card write is a committed settings change: the service leaves the source
   // thunk alone and signals the commit through `onChange`.
-  host.captured.installs[0]?.hooks.setSource(() => ({ mode: 'lite' }))
-  host.captured.installs[0]?.hooks.onChange()
+  host.config.defaultMode = 'lite'
+  host.emitVolatile()
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: lite\n\n/)
 })
 
 test('a refused settings write still applies the level for this session', async () => {
   const host = createHost({ failUpdate: true })
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   const warnings: string[] = []
   const originalWarn = console.warn
@@ -224,13 +226,13 @@ test('a refused settings write still applies the level for this session', async 
 
 test('the command switches and reports through the UI', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   assert.deepEqual(await callCommand(host, ''), { kind: 'success', text: 'Ponytail level: full.' })
   assert.deepEqual(await callCommand(host, ' lite '), {
     kind: 'success', text: 'Ponytail level: lite (was full).',
   })
-  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'lite' } }])
+  assert.deepEqual(host.captured.updates, [{ namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { defaultMode: 'lite' } }])
 
   assert.deepEqual(await callCommand(host, 'normal mode'), {
     kind: 'success', text: 'Ponytail off (was lite). Normal behavior.',
@@ -248,7 +250,8 @@ test('the command switches and reports through the UI', async () => {
 
 test('the tool renders its canonical value for the model', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'lite' })
+  host.config.defaultMode = 'lite'
+  apply(host.ctx, host.config)
   const tool = host.captured.tools[0]
   assert.ok(tool)
 
@@ -265,7 +268,7 @@ test('the tool renders its canonical value for the model', async () => {
 
 test('the tool declares the published argument schema', () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
   const tool = host.captured.tools[0]
   assert.ok(tool)
 
@@ -296,7 +299,7 @@ test('the tool declares the published argument schema', () => {
 
 test('a detached settings service is not written to', async () => {
   const host = createHost({ detachSettings: true })
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   // `ctx.get('settings')` is queried per call, so an unmounted service makes
   // the level session-local instead of reaching a detached one.
@@ -307,7 +310,7 @@ test('a detached settings service is not written to', async () => {
 
 test('the tool settles when the caller aborts a slow settings write', async () => {
   const host = createHost({ updateDelayMs: 50 })
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   const controller = new AbortController()
   const pending = callTool(host, { mode: 'ultra' }, controller.signal)
@@ -331,7 +334,7 @@ function userEvent(text: string, kind = 'user'): SessionEventLike {
 
 test('a "stop ponytail" message turns the level off before the turn assembles', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
   assert.match(sectionText(host.captured.sections[0]), /level: full/)
 
   host.emit(userEvent('stop ponytail'))
@@ -342,7 +345,7 @@ test('a "stop ponytail" message turns the level off before the turn assembles', 
 
   await settle()
   assert.deepEqual(host.captured.updates, [
-    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'off' } },
+    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { defaultMode: 'off' } },
   ])
   // The committed document, not the session-local override, now says off.
   assert.equal(sectionText(host.captured.sections[0]), '')
@@ -357,13 +360,13 @@ test('"normal mode" works the same way', async () => {
 
   await settle()
   assert.deepEqual(host.captured.updates, [
-    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { mode: 'off' } },
+    { namespace: PONYTAIL_SETTINGS_NAMESPACE, patch: { defaultMode: 'off' } },
   ])
 })
 
 test('only the human\'s own words may deactivate', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'full' })
+  apply(host.ctx, host.config)
 
   // Injected context rides the same event stream: a skill body or reference
   // that happens to read "normal mode" must not toggle the level.
