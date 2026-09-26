@@ -22,8 +22,10 @@ test('the six bundled skills mount into a real skill registry and leave on dispo
 
   // The plugin module's `apply` takes the structural `HostContext` this package
   // declares, which the real context satisfies; the cast bridges that structural
-  // view to the framework's own plugin type.
-  const fiber = await ctx.plugin(Ponytail.apply as never, {} as never)
+  // view to the framework's own plugin type. The row is the schema's own output,
+  // because `apply` now reads the live volatile reference the loader passes.
+  const row = Ponytail.Config({ defaultMode: 'full' })
+  const fiber = await ctx.plugin(Ponytail.apply as never, row as never)
   const listed = await ctx.skills.list()
 
   assert.deepEqual(listed.map((skill) => skill.name), [

@@ -8,7 +8,7 @@ import {
   normalizeMode,
   resolveDefaultMode,
 } from '../src/modes.ts'
-import { apply } from '../src/index.ts'
+import { apply, Config } from '../src/index.ts'
 
 test('normalizeMode accepts only runtime levels', () => {
   assert.equal(normalizeMode('ULTRA'), 'ultra')
@@ -105,7 +105,7 @@ test('the injected section reuses one filtered ruleset per level', { timeout: 12
     on: () => () => {},
     ...services,
   }
-  apply(ctx as never)
+  apply(ctx as never, Config({ defaultMode: 'full' }))
 
   const section = sections[0]
   assert.ok(section, 'the plugin registers one system-prompt section')

@@ -22,6 +22,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
@@ -59,11 +60,12 @@ export const name = 'ponytail'
  *
  * The level is defaulted in the schema below, so the loader fills an absent
  * `defaultMode` with `full` before {@link apply} runs; an invalid value still
- * fails at load, because the union rejects it.
+ * fails at load, because the union rejects it. The field is volatile, so the
+ * value arrives as a stable reference the plugin reads with `.get()`.
  */
 export interface Config {
-  /** Startup level (`off`, `lite`, `full`, `ultra`). Volatile on v0.1.7. */
-  readonly defaultMode?: RuntimeMode | { readonly value: RuntimeMode | undefined }
+  /** Startup level. The schema default fills `full`. */
+  readonly defaultMode: Volatile<RuntimeMode>
 }
 
 /** Row schema: an absent level is filled by the loader before `apply`. */
@@ -74,12 +76,12 @@ export const Config = z.object({
 /**
  * Mount the plugin.
  * @param ctx - the host context.
- * @param config - optional row configuration.
+ * @param config - the schema-resolved row; the loader always passes one.
  */
-export function apply(ctx: HostContext, config: Config = {}): void {
+export function apply(ctx: HostContext, config: Config): void {
   // `<package>/skills`, resolved from this module's own location.
   const skillsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills')
-  const startup = resolveDefaultMode(plainMode(config.defaultMode))
+  const startup = resolveDefaultMode(config.defaultMode.get())
   // Parsed once, at load: the ruleset is filtered per assembly, so the
   // frontmatter must not have to be re-read for every request. A missing body
   // means a broken install: fail while loading rather than injecting a silently
@@ -110,14 +112,9 @@ export function apply(ctx: HostContext, config: Config = {}): void {
 
   /** Session-local level, used when the profile write cannot hold the level. */
   let override: PonytailMode | undefined
-  /** Live row. v0.1.7 updates volatile fields in place. */
-  const source = (): unknown => config
 
-  const configuredMode = (): PonytailMode | undefined => {
-    const value = source()
-    if (value === null || typeof value !== 'object') return undefined
-    return normalizeMode(plainMode((value as { defaultMode?: unknown }).defaultMode))
-  }
+  /** The row's live level; updates are committed into the same reference. */
+  const configuredMode = (): PonytailMode | undefined => normalizeMode(config.defaultMode.get())
 
   const activeMode = (): PonytailMode => override ?? configuredMode() ?? startup
 
@@ -407,12 +404,4 @@ async function handleModeCommand(
 function entryId(ctx: HostContext): string | undefined {
   const id = ctx.fiber?.entry?.options?.id
   return typeof id === 'string' ? id : undefined
-}
-
-/** Unwrap a v0.1.7 volatile ref. A plain value passes through. */
-function plainMode(value: unknown): unknown {
-  if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
-    return (value as { get: () => unknown }).get()
-  }
-  return value
 }

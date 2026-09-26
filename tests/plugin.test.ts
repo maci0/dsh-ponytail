@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { apply } from '../src/index.ts'
+import { apply, Config } from '../src/index.ts'
 import type {
   CommandDefinitionLike,
   HostContext,
@@ -28,7 +28,8 @@ function createHost(
 ): {
   ctx: HostContext
   captured: Captured
-  config: { defaultMode: RuntimeMode }
+  config: Config
+  row: { defaultMode: RuntimeMode }
   emit: (event: SessionEventLike) => void
   emitVolatile: () => void
 } {
@@ -36,6 +37,9 @@ function createHost(
     sections: [], providers: [], tools: [], commands: [], updates: [],
   }
   const row: { defaultMode: RuntimeMode } = { defaultMode: 'full' }
+  // The loader hands `apply` a reference, not a value: this double is what the
+  // real volatile field is, and `row` stands in for the live committed value.
+  const config: Config = { defaultMode: { get: () => row.defaultMode } }
   const volatileListeners: Array<() => void> = []
 
   const services = {
@@ -96,7 +100,8 @@ function createHost(
   return {
     ctx: ctx as unknown as HostContext,
     captured,
-    config: row,
+    config,
+    row,
     emit: (event: SessionEventLike): void => { for (const listener of listeners) listener({}, event) },
     emitVolatile: (): void => { for (const listener of volatileListeners) listener() },
   }
@@ -173,9 +178,9 @@ test('review stays session-local because it is not a persistable level', async (
   assert.deepEqual(host.captured.updates, [])
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: review\./)
 
-  // A card write is a committed settings change: the service leaves the source
-  // thunk alone and signals the commit through `onChange`.
-  host.config.defaultMode = 'lite'
+  // A card write is a committed settings change: the loader commits it into the
+  // live volatile reference and signals the commit through the row event.
+  host.row.defaultMode = 'lite'
   host.emitVolatile()
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: lite\n\n/)
 })
@@ -225,7 +230,7 @@ test('the command switches and reports through the UI', async () => {
 
 test('the tool renders its canonical value for the model', async () => {
   const host = createHost()
-  host.config.defaultMode = 'lite'
+  host.row.defaultMode = 'lite'
   apply(host.ctx, host.config)
   const tool = host.captured.tools[0]
   assert.ok(tool)
@@ -328,7 +333,7 @@ test('a "stop ponytail" message turns the level off before the turn assembles', 
 
 test('"normal mode" works the same way', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'ultra' })
+  apply(host.ctx, Config({ defaultMode: 'ultra' }))
 
   host.emit(userEvent('  Normal Mode! '))
   assert.equal(sectionText(host.captured.sections[0]), '')
@@ -358,7 +363,7 @@ test('only the human\'s own words may deactivate', async () => {
 
 test('an already-off level is not written again', async () => {
   const host = createHost()
-  apply(host.ctx, { defaultMode: 'off' })
+  apply(host.ctx, Config({ defaultMode: 'off' }))
 
   host.emit(userEvent('stop ponytail'))
   await settle()

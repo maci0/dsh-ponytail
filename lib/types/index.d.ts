@@ -18,6 +18,7 @@
  *
  * @module dsh-ponytail
  */
+import type { Volatile } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { type RuntimeMode } from './modes.ts';
 import type { HostContext } from './host.ts';
@@ -33,13 +34,12 @@ export declare const name = "ponytail";
  *
  * The level is defaulted in the schema below, so the loader fills an absent
  * `defaultMode` with `full` before {@link apply} runs; an invalid value still
- * fails at load, because the union rejects it.
+ * fails at load, because the union rejects it. The field is volatile, so the
+ * value arrives as a stable reference the plugin reads with `.get()`.
  */
 export interface Config {
-    /** Startup level (`off`, `lite`, `full`, `ultra`). Volatile on v0.1.7. */
-    readonly defaultMode?: RuntimeMode | {
-        readonly value: RuntimeMode | undefined;
-    };
+    /** Startup level. The schema default fills `full`. */
+    readonly defaultMode: Volatile<RuntimeMode>;
 }
 /** Row schema: an absent level is filled by the loader before `apply`. */
 export declare const Config: z<Schemastery.ObjectS<NoInfer<{
@@ -50,6 +50,6 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
 /**
  * Mount the plugin.
  * @param ctx - the host context.
- * @param config - optional row configuration.
+ * @param config - the schema-resolved row; the loader always passes one.
  */
-export declare function apply(ctx: HostContext, config?: Config): void;
+export declare function apply(ctx: HostContext, config: Config): void;
