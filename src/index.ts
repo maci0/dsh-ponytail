@@ -11,7 +11,7 @@
  *   (`/ponytail` command);
  * - the `ponytail` settings namespace makes the level persistent and pairs with
  *   this package's browser half, which renders the card in the Web client's
- *   Plugins → Plugin configuration tab.
+ *   Plugins page, on the ponytail row's Configure control.
  *
  * Skill content is adapted from the reference implementation
  * (https://github.com/DietrichGebert/ponytail, MIT, © DietrichGebert).

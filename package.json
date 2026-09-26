@@ -1,6 +1,6 @@
 {
   "name": "dsh-ponytail",
-  "version": "0.13.6",
+  "version": "0.13.7",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
