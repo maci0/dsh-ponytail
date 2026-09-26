@@ -113,23 +113,6 @@ export function apply(ctx: HostContext, config: Config): void {
   /** Session-local level, used when the profile write cannot hold the level. */
   let override: PonytailMode | undefined
 
-  /**
-   * The row's value when the session override was installed.
-   *
-   * The override exists because the settings document refused a write; it has
-   * to survive the `loader/volatile-update` that a still-uncommitted write
-   * raises, and it has to yield to any change the document actually carries.
-   * Comparing against this snapshot is what tells the two apart.
-   */
-  let overrideBase: PonytailMode | undefined
-
-  /** Install a session-local level, remembering what the row said at the time. */
-  const installOverride = (mode: PonytailMode): void => {
-    overrideBase = configuredMode()
-    override = mode
-  }
-
-
   /** The row's live level; updates are committed into the same reference. */
   const configuredMode = (): PonytailMode | undefined => normalizeMode(config.defaultMode.get())
 
@@ -170,8 +153,7 @@ export function apply(ctx: HostContext, config: Config): void {
     signal?: AbortSignal,
   ): Promise<{ previous: PonytailMode; mode: PonytailMode; changed: boolean }> => {
     const previous = activeMode()
-    if (await persist(next, signal)) override = undefined
-    else installOverride(next)
+    override = (await persist(next, signal)) ? undefined : next
     const mode = activeMode()
     return { previous, mode, changed: mode !== previous }
   }
@@ -189,20 +171,14 @@ export function apply(ctx: HostContext, config: Config): void {
    */
   const deactivateFromMessage = (): void => {
     if (activeMode() === 'off') return
-    installOverride('off')
+    override = 'off'
     void persist('off').then((persisted) => {
       if (persisted) override = undefined
     })
   }
 
   ctx.on('loader/volatile-update', () => {
-    if (override === undefined) return
-    const current = configuredMode()
-    // The write this session asked for landing, or any other change to the row:
-    // either way the document is authoritative again. An event that still shows
-    // the value this override replaced is the race between a settings write and
-    // the loader committing it, and the override has to survive that.
-    if (current === override || current !== overrideBase) override = undefined
+    override = undefined
   })
 
   ctx.inject(['systemPrompt'], (scope) => {
