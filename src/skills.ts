@@ -97,7 +97,11 @@ async function readSkillFile(
   let source: string
   try {
     source = await readFile(path, 'utf8')
-  } catch {
+  } catch (error) {
+    // A directory without an instruction file is a broken skill, not an empty
+    // one: `discoverSkills` promises this reaches the same sink as every other
+    // skipped skill, so the install can say why a skill is missing.
+    onWarn?.(`cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`)
     return undefined
   }
 
@@ -241,9 +245,15 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
       if (lookup.signal?.aborted) return undefined
 
       // Read the locator directly: one file instead of a full re-discovery.
+      // The directory name is the same fallback discovery used, so a skill
+      // whose frontmatter omits `name` loads under the name `list` reported.
       // The name check keeps a stale candidate (path reused by another skill)
       // from loading under the wrong identity.
-      const skill = await readSkillFile(candidate.locator, options.onWarn)
+      const skill = await readSkillFile(
+        candidate.locator,
+        options.onWarn,
+        basename(dirname(candidate.locator)),
+      )
       if (lookup.signal?.aborted) return undefined
       if (skill === undefined || skill.name !== candidate.name) return undefined
 

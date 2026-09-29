@@ -165,6 +165,20 @@ test('discoverSkills reads every bundled skill with a usable description', async
   assert.doesNotMatch(core.whenToUse ?? '', /^Forces/)
 })
 
+test('discoverSkills reports a directory with no instruction file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ponytail-nofile-'))
+  try {
+    await mkdir(join(root, 'empty'), { recursive: true })
+
+    const warnings: string[] = []
+    assert.deepEqual(await discoverSkills(root, (message) => warnings.push(message)), [])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0] ?? '', /cannot read .*SKILL\.md/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('discoverSkills reports and skips an unreadable directory', async () => {
   const warnings: string[] = []
   const skills = await discoverSkills(join(packageRoot, 'does-not-exist'), (message) => warnings.push(message))
@@ -202,6 +216,33 @@ test('the provider lists candidates and loads their bodies', async () => {
 
   const stale = await provider.get({ ...review, name: 'other-skill' })
   assert.equal(stale, undefined)
+})
+
+test('a skill named only by its directory loads under that name', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ponytail-dirname-'))
+  try {
+    await mkdir(join(root, 'my-skill'), { recursive: true })
+    await writeFile(
+      join(root, 'my-skill', 'SKILL.md'),
+      '---\ndescription: A description with no name field.\n---\nbody\n',
+    )
+
+    const warnings: string[] = []
+    const provider = createSkillProvider({ skillsDir: root, onWarn: (message) => warnings.push(message) })
+
+    const candidates = await provider.list()
+    assert.deepEqual(candidates.map((candidate) => candidate.name), ['my-skill'])
+
+    const listed = candidates[0]
+    assert.ok(listed)
+    const definition = await provider.get(listed)
+    assert.ok(definition, 'a skill the provider lists must also load')
+    assert.equal(definition.name, 'my-skill')
+    assert.equal(definition.content, 'body')
+    assert.deepEqual(warnings, [])
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('the provider projects the invocation policy and whenToUse', async () => {
