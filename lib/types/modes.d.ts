@@ -52,7 +52,8 @@ export declare function resolveDefaultMode(configured?: unknown): RuntimeMode;
  * are keyed by a level name. A bullet whose label is not a level — e.g.
  * "No unrequested abstractions: ..." — is a normal rule and stays verbatim; the
  * quoted-value requirement on examples is what keeps a rule that merely starts
- * with a level word from being dropped in every other mode.
+ * with a level word from being dropped in every other mode. A fenced code block
+ * is literal text, so nothing in it is dropped either.
  * @param body - markdown of the `ponytail` skill, frontmatter already removed.
  * @param mode - the level to keep.
  * @returns the body with other levels' rows and examples removed.

@@ -79,6 +79,41 @@ export function resolveDefaultMode(configured?: unknown): RuntimeMode {
 const TABLE_LABEL = /^\|\s*\*\*(.+?)\*\*\s*\|/
 const EXAMPLE_LABEL = /^-\s*([^:]+):\s*"/
 
+/** Opening or closing marker of a fenced code block, with its run of backticks or tildes. */
+const FENCE = /^\s*(`{3,}|~{3,})/
+
+/**
+ * Mark every line that belongs to a fenced code block.
+ *
+ * Fenced text is literal, so a mode-shaped line inside it is an example of the
+ * syntax, not a ruleset row: the filter must leave it alone. Fences nest by
+ * length, so a run closes only on the same character with an equal or longer
+ * run; an unterminated fence runs to the end of the body, as CommonMark reads
+ * it.
+ * @param lines - the body, split into lines.
+ * @returns one flag per line, `true` inside a fence.
+ */
+function fencedLines(lines: readonly string[]): readonly boolean[] {
+  const inside: boolean[] = lines.map(() => false)
+  let open: string | undefined
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = FENCE.exec(lines[index] ?? '')?.[1]
+    if (marker === undefined) {
+      inside[index] = open !== undefined
+      continue
+    }
+
+    // A marker that matches the opening run closes it; a shorter or
+    // differently-charactered one is content inside the open fence.
+    if (open === undefined) open = marker
+    else if (marker[0] === open[0] && marker.length >= open.length) open = undefined
+    inside[index] = true
+  }
+
+  return inside
+}
+
 /**
  * Drop the intensity-table rows and worked examples that belong to other
  * levels.
@@ -87,17 +122,21 @@ const EXAMPLE_LABEL = /^-\s*([^:]+):\s*"/
  * are keyed by a level name. A bullet whose label is not a level — e.g.
  * "No unrequested abstractions: ..." — is a normal rule and stays verbatim; the
  * quoted-value requirement on examples is what keeps a rule that merely starts
- * with a level word from being dropped in every other mode.
+ * with a level word from being dropped in every other mode. A fenced code block
+ * is literal text, so nothing in it is dropped either.
  * @param body - markdown of the `ponytail` skill, frontmatter already removed.
  * @param mode - the level to keep.
  * @returns the body with other levels' rows and examples removed.
  */
 export function filterSkillBodyForMode(body: string, mode: PonytailMode): string {
   const effective = normalizeMode(mode) ?? DEFAULT_MODE
+  const lines = String(body ?? '').split(/\r?\n/)
+  const fenced = fencedLines(lines)
 
-  return String(body ?? '')
-    .split(/\r?\n/)
-    .filter((line) => {
+  return lines
+    .filter((line, index) => {
+      if (fenced[index] === true) return true
+
       // Both labels start their line, so one character rules out the common
       // prose line before either regex runs. Same rows, same output.
       const head = line.charCodeAt(0)

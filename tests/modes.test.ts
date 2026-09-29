@@ -67,6 +67,44 @@ test('filterSkillBodyForMode keeps only the active level rows and examples', () 
   assert.match(ultra, /- No unrequested abstractions: keep me\./)
 })
 
+test('filterSkillBodyForMode leaves mode-shaped lines inside a code fence alone', () => {
+  // The filter is documented to touch only the intensity table rows and worked
+  // examples. A fenced block is literal code: a row or bullet in it is not a
+  // contribution to the ruleset, so no level may delete it.
+  const body = [
+    '## Intensity',
+    '| **lite** | real lite row |',
+    '| **full** | real full row |',
+    '- lite: "real lite example"',
+    '- full: "real full example"',
+    '````markdown',
+    '| **lite** | literal lite row |',
+    '| **full** | literal full row |',
+    '- lite: "literal lite example"',
+    '```',
+    '- full: "literal full example"',
+    '````',
+    'tail',
+  ].join('\n')
+
+  const full = filterSkillBodyForMode(body, 'full')
+  assert.match(full, /\| \*\*lite\*\* \| literal lite row \|/)
+  assert.match(full, /- lite: "literal lite example"/)
+  assert.match(full, /- full: "literal full example"/)
+  assert.doesNotMatch(full, /real lite row/)
+  assert.doesNotMatch(full, /real lite example/)
+
+  const lite = filterSkillBodyForMode(body, 'lite')
+  assert.match(lite, /- full: "literal full example"/)
+  assert.doesNotMatch(lite, /real full example/)
+
+  // An unterminated fence is code to the end of the document (CommonMark), so a
+  // marker in it stays literal in every level.
+  const open = ['- lite: "real"', '```', '- lite: "unterminated"'].join('\n')
+  assert.match(filterSkillBodyForMode(open, 'full'), /- lite: "unterminated"/)
+  assert.doesNotMatch(filterSkillBodyForMode(open, 'full'), /- lite: "real"/)
+})
+
 test('buildModeInstructions drops the ruleset when off and points at review', () => {
   assert.equal(buildModeInstructions({ mode: 'off', skillBody: '# rules' }), '')
 
