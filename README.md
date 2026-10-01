@@ -119,7 +119,7 @@ its card into the public `plugins.row.config` slot from `configForms`, registers
 copy through `locale.register`, and draws its chip into `conversation.input.left`, so
 this plugin needs no client change of its own.
 
-The entry point is the built `lib/index.js` (declarations in `lib/types/`); `npm run
+The entry point is the built `lib/index.js` (declarations in `lib/types/`); `bun run
 build` regenerates it from `src/`. `lib/client.js` is hand-authored plain JavaScript:
 the client module system serves it as a lazy-CJS factory on `window.__ModuleLoader__`
 because the package exports `./client`, and it is not built. Skills come from
@@ -143,7 +143,7 @@ second copy.
   any level kept when the settings write fails) never reaches the card or the chip.
 - **Two locales.** The card and the chip ship `en` and `zh`; any other locale
   falls back through the service's own chain.
-- **Host source edits need `npm run build` and a restart**, because the Loader
+- **Host source edits need `bun run build` and a restart**, because the Loader
   loads `lib/index.js` and a bundle layer composes at boot.
 - **Browser-half edits need a page refresh.**
 - **A level change is not a session event.** A replayed session shows the ruleset
@@ -152,11 +152,13 @@ second copy.
 ## Development
 
 ```sh
-npm install         # .npmrc sets legacy-peer-deps for the optional client peers
-npm run build       # tsc -p tsconfig.build.json -> lib/index.js + lib/types/
-npm test            # node --test tests/*.test.ts (Node ^22.19 || >=24, no build step)
-npm run typecheck   # tsc -p tsconfig.json
+bun install         # the client packages are optional peers and stay uninstalled
+bun run build       # tsc -p tsconfig.build.json -> lib/index.js + lib/types/
+bun test            # every tests/*.test.ts, no build step
+bun run typecheck   # tsc -p tsconfig.json
 ```
+
+dsh loads plugins on Node ^22.19.0 || >=24.0.0; development and tests run on bun.
 
 For local development, install the checkout into a profile with
 `dsh plugin --profile <name> add <path-to-checkout>`.
