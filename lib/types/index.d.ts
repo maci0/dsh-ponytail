@@ -25,6 +25,12 @@ import type { HostContext } from './host.ts';
 /** Plugin name as it appears in the loader. */
 export declare const name = "ponytail";
 /**
+ * Route the browser half reads for the level in use and its source. The card
+ * and the chip cannot see a session-local level (`review`, or one the settings
+ * document refused), so they ask the host instead of the settings document.
+ */
+export declare const LEVEL_ROUTE = "/ponytail/level";
+/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
  * The level is defaulted in the schema below, so the loader fills an absent

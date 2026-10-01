@@ -51,6 +51,13 @@ import type {
 export const name = 'ponytail'
 
 /**
+ * Route the browser half reads for the level in use and its source. The card
+ * and the chip cannot see a session-local level (`review`, or one the settings
+ * document refused), so they ask the host instead of the settings document.
+ */
+export const LEVEL_ROUTE = '/ponytail/level'
+
+/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
  * The level is defaulted in the schema below, so the loader fills an absent
@@ -204,6 +211,31 @@ export function apply(ctx: HostContext, config: Config): void {
       input: { hint: 'lite | full | ultra | review | off' },
       handler: async (invocation) => handleModeCommand(invocation, activeMode, setMode),
     })
+  })
+
+  ctx.inject(['webServer', 'connection'], (scope) => {
+    scope.effect(() => scope.webServer.register({
+      kind: 'exact',
+      path: LEVEL_ROUTE,
+      handler: (req, res) => {
+        const rejection = scope.connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.statusCode = rejection
+          res.end()
+          return
+        }
+        if (req.method !== undefined && req.method !== 'GET') {
+          res.statusCode = 405
+          res.setHeader('allow', 'GET')
+          res.end()
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('content-type', 'application/json; charset=utf-8')
+        res.setHeader('cache-control', 'no-store')
+        res.end(JSON.stringify({ mode: activeMode(), source: override === undefined ? 'settings' : 'session' }))
+      },
+    }), `ponytail: GET ${LEVEL_ROUTE}`)
   })
 
   // "stop ponytail" / "normal mode" typed as an ordinary message, given the
