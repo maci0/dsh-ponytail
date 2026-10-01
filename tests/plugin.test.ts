@@ -309,9 +309,9 @@ test('the tool settles when the caller aborts a slow settings write', async () =
   controller.abort()
 
   const started = Date.now()
-  const applied = await pending
+  await assert.rejects(pending, /abort/i)
   assert.ok(Date.now() - started < 40, 'the call settled before the write did')
-  assert.deepEqual(applied, { mode: 'ultra', previous: 'full', changed: true, active: true })
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full/)
 })
 
 /** Let the fire-and-forget settings write settle. */
@@ -422,4 +422,32 @@ test('the level route answers an untrusted request with the trust fence status',
   const answer = await callLevelRoute(host)
   assert.equal(answer.status, 403)
   assert.equal(answer.body, '')
+})
+
+
+test('an older refused mode write cannot undo a newer normal-mode message', async () => {
+  const host = createHost()
+  apply(host.ctx, host.config)
+  let rejectOld!: (error: Error) => void
+  let writes = 0
+  const settings = host.ctx.get('settings') as { update: () => Promise<void> }
+  settings.update = () => ++writes === 1
+    ? new Promise((_resolve, reject) => { rejectOld = reject })
+    : Promise.reject(new Error('read-only'))
+  const old = callTool(host, { mode: 'lite' })
+  host.emit({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'stop ponytail' }] } })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(sectionText(host.captured.sections[0]), '')
+  rejectOld(new Error('read-only'))
+  await old
+  assert.equal(sectionText(host.captured.sections[0]), '', 'the older fallback must not reactivate the mode')
+})
+
+
+test('an already aborted mode tool makes no settings write or local override', async () => {
+  const host = createHost()
+  apply(host.ctx, host.config)
+  await assert.rejects(() => callTool(host, { mode: 'lite' }, AbortSignal.abort()), /abort/i)
+  assert.deepEqual(host.captured.updates, [])
+  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full/)
 })

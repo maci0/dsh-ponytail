@@ -114,6 +114,7 @@ export function apply(ctx: HostContext, config: Config): void {
 
   /** Session-local level, used when the profile write cannot hold the level. */
   let override: PonytailMode | undefined
+  let modeGeneration = 0
 
   /** The row's live level; updates are committed into the same reference. */
   const configuredMode = (): PonytailMode | undefined => normalizeMode(config.defaultMode.get())
@@ -139,13 +140,16 @@ export function apply(ctx: HostContext, config: Config): void {
    * @returns whether the document accepted the level.
    */
   const persist = async (next: PonytailMode, signal?: AbortSignal): Promise<boolean> => {
+    signal?.throwIfAborted()
     const settings = settingsService()
     const id = entryId(ctx)
     if (settings === undefined || id === undefined || normalizeMode(next) === undefined) return false
     try {
       await abortable(settings.update(id, { defaultMode: next }), signal)
+      signal?.throwIfAborted()
       return true
     } catch (error) {
+      signal?.throwIfAborted()
       warn(`could not persist level "${next}": ${error instanceof Error ? error.message : String(error)}`)
       return false
     }
@@ -155,8 +159,12 @@ export function apply(ctx: HostContext, config: Config): void {
     next: PonytailMode,
     signal?: AbortSignal,
   ): Promise<{ previous: PonytailMode; mode: PonytailMode; changed: boolean }> => {
+    signal?.throwIfAborted()
+    const started = ++modeGeneration
     const previous = activeMode()
-    override = (await persist(next, signal)) ? undefined : next
+    const persisted = await persist(next, signal)
+    // A refused older request cannot restore a level the human already ended.
+    if (started === modeGeneration) override = persisted ? undefined : next
     const mode = activeMode()
     return { previous, mode, changed: mode !== previous }
   }
@@ -174,13 +182,15 @@ export function apply(ctx: HostContext, config: Config): void {
    */
   const deactivateFromMessage = (): void => {
     if (activeMode() === 'off') return
+    const started = ++modeGeneration
     override = 'off'
     void persist('off').then((persisted) => {
-      if (persisted) override = undefined
+      if (persisted && started === modeGeneration) override = undefined
     })
   }
 
   ctx.on('loader/volatile-update', () => {
+    modeGeneration += 1
     override = undefined
   })
 
