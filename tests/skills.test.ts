@@ -447,34 +447,9 @@ test('the fast reader and the real parser agree on every shape', async () => {
 })
 
 test('a flat frontmatter block never loads the real YAML parser', { timeout: 120_000 }, async () => {
-  // The counter is module-load work, not time: the child registers a load hook
-  // that counts every `yaml` module the graph pulls in. Before this reader had
-  // a fast path, `import { parse } from 'yaml'` put all 72 of them in the graph
-  // at import time, before a single block was read.
-  const frontmatterUrl = new URL('../src/frontmatter.ts', import.meta.url).href
-  const script = [
-    "import { registerHooks } from 'node:module'",
-    "import { readFile, readdir } from 'node:fs/promises'",
-    "import { join } from 'node:path'",
-    'let yamlLoads = 0',
-    'registerHooks({',
-    '  load(url, context, nextLoad) {',
-    "    if (url.includes('node_modules/yaml/')) yamlLoads += 1",
-    '    return nextLoad(url, context)',
-    '  },',
-    '})',
-    `const { parseFrontmatter } = await import(${JSON.stringify(frontmatterUrl)})`,
-    'const atImport = yamlLoads',
-    `const names = await readdir(${JSON.stringify(skillsDir)})`,
-    'for (const name of names) {',
-    `  await parseFrontmatter(await readFile(join(${JSON.stringify(skillsDir)}, name, 'SKILL.md'), 'utf8'))`,
-    '}',
-    'const afterFlat = yamlLoads',
-    "await parseFrontmatter('---\\nname: x\\nmetadata:\\n  a: b\\n---\\nbody\\n')",
-    'console.log(JSON.stringify({ atImport, afterFlat, afterNested: yamlLoads, skills: names.length }))',
-  ].join('\n')
-
-  const { stdout } = await run(process.execPath, ['--input-type=module', '-e', script], {
+  // The registry is per process and `bun test` shares one across files, some of
+  // which import `yaml` themselves, so the count runs in a child of its own.
+  const { stdout } = await run(process.execPath, [join(packageRoot, 'tests', 'yaml-probe.ts')], {
     cwd: packageRoot,
     timeout: 60_000,
   })
