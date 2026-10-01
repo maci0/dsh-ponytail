@@ -9,7 +9,7 @@
  *
  * @module dsh-ponytail/host
  */
-import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider } from '@deepseek-ai/dsh-skill';
+import type { SkillCandidate, SkillDefinition, SkillLookupOptions, SkillProvider, SkillProviderObservation } from '@deepseek-ai/dsh-skill';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
 /** Disposer returned by every host registration. */
 type Disposable = () => void;
@@ -23,12 +23,10 @@ export interface PromptSectionContribution {
     readonly text: string | ((context: unknown) => string);
 }
 /**
- * A {@link SkillProvider} whose catalog is always one complete plain array and
- * whose lookup may be omitted, which is how this plugin's own provider is
- * called.
+ * A {@link SkillProvider} whose lookup may be omitted by direct callers.
  */
 export type SkillProviderLike = Omit<SkillProvider, 'list' | 'get'> & {
-    list(options?: SkillLookupOptions): Promise<readonly SkillCandidate[]>;
+    list(options?: SkillLookupOptions): Promise<readonly SkillCandidate[] | SkillProviderObservation>;
     get(candidate: SkillCandidate, options?: SkillLookupOptions): Promise<SkillDefinition | undefined>;
 };
 /** Invocation handed to a registered human command. */

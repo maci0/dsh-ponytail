@@ -16,6 +16,7 @@ import {
   type SkillCandidate,
   type SkillDefinition,
   type SkillLookupOptions,
+  type SkillProviderObservation,
   type SkillSummary,
 } from '@deepseek-ai/dsh-skill'
 import { parseFrontmatter } from './frontmatter.ts'
@@ -206,16 +207,20 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
    * number of directories this provider was built for, which is one. A call
    * that was aborted is never stored, so it keeps re-reading the tree.
    */
-  const catalogs = new Map<string, Promise<readonly PonytailSkill[]>>()
+  const catalogs = new Map<string, Promise<{ skills: readonly PonytailSkill[]; complete: boolean }>>()
 
-  const discoverOnce = (signal?: AbortSignal): Promise<readonly PonytailSkill[]> => {
+  const discoverOnce = (signal?: AbortSignal): Promise<{ skills: readonly PonytailSkill[]; complete: boolean }> => {
     const cached = catalogs.get(options.skillsDir)
     if (cached !== undefined) return cached
-    const pending = discoverSkills(options.skillsDir, options.onWarn)
+    let complete = true
+    const pending = discoverSkills(options.skillsDir, (message) => {
+      complete = false
+      options.onWarn?.(message)
+    }).then((skills) => ({ skills, complete }))
     // Store after the read settles, and only while the caller still wants it:
     // an aborted call must read the tree on its next attempt.
     pending.then(
-      () => { if (signal?.aborted !== true) catalogs.set(options.skillsDir, pending) },
+      ({ complete }) => { if (complete && signal?.aborted !== true) catalogs.set(options.skillsDir, pending) },
       () => {},
     )
     return pending
@@ -228,16 +233,17 @@ export function createSkillProvider(options: SkillProviderOptions): SkillProvide
     // invalidate and no watcher to own. `list`/`get` honor the caller's abort
     // signal only at their own await boundaries: a caller that aborts mid-read
     // gets no candidates rather than a later answer it stopped waiting for.
-    async list(lookup: SkillLookupOptions = {}): Promise<readonly SkillCandidate[]> {
+    async list(lookup: SkillLookupOptions = {}): Promise<readonly SkillCandidate[] | SkillProviderObservation> {
       if (lookup.signal?.aborted) return []
-      const skills = await discoverOnce(lookup.signal)
+      const { skills, complete } = await discoverOnce(lookup.signal)
       if (lookup.signal?.aborted) return []
-      return skills.map((skill) => ({
+      const candidates = skills.map((skill) => ({
         ...summaryOf(skill),
         rank: BUNDLED_SKILL_RANK,
         locator: skill.path,
         metadata: skill.metadata,
       }))
+      return complete ? candidates : { candidates, complete: false }
     },
 
     async get(candidate: SkillCandidate, lookup: SkillLookupOptions = {}): Promise<SkillDefinition | undefined> {

@@ -15,6 +15,7 @@ import type {
   SkillDefinition,
   SkillLookupOptions,
   SkillProvider,
+  SkillProviderObservation,
 } from '@deepseek-ai/dsh-skill'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
@@ -32,12 +33,10 @@ export interface PromptSectionContribution {
 }
 
 /**
- * A {@link SkillProvider} whose catalog is always one complete plain array and
- * whose lookup may be omitted, which is how this plugin's own provider is
- * called.
+ * A {@link SkillProvider} whose lookup may be omitted by direct callers.
  */
 export type SkillProviderLike = Omit<SkillProvider, 'list' | 'get'> & {
-  list(options?: SkillLookupOptions): Promise<readonly SkillCandidate[]>
+  list(options?: SkillLookupOptions): Promise<readonly SkillCandidate[] | SkillProviderObservation>
   get(candidate: SkillCandidate, options?: SkillLookupOptions): Promise<SkillDefinition | undefined>
 }
 

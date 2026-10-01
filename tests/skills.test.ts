@@ -1,3 +1,4 @@
+import { candidatesOf } from './scratch.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFile } from 'node:child_process'
@@ -190,7 +191,7 @@ test('discoverSkills reports and skips an unreadable directory', async () => {
 
 test('the provider lists candidates and loads their bodies', async () => {
   const provider = createSkillProvider({ skillsDir })
-  const candidates = await provider.list()
+  const candidates = candidatesOf(await provider.list())
 
   assert.equal(provider.name, 'ponytail')
   assert.equal(candidates.length, 6)
@@ -230,7 +231,7 @@ test('a skill named only by its directory loads under that name', async () => {
     const warnings: string[] = []
     const provider = createSkillProvider({ skillsDir: root, onWarn: (message) => warnings.push(message) })
 
-    const candidates = await provider.list()
+    const candidates = candidatesOf(await provider.list())
     assert.deepEqual(candidates.map((candidate) => candidate.name), ['my-skill'])
 
     const listed = candidates[0]
@@ -274,7 +275,7 @@ test('the provider projects the invocation policy and whenToUse', async () => {
     )
 
     const provider = createSkillProvider({ skillsDir: root })
-    const candidates = await provider.list()
+    const candidates = candidatesOf(await provider.list())
     const byName = new Map(candidates.map((candidate) => [candidate.name, candidate]))
 
     const modelOff = byName.get('model-off')
@@ -302,9 +303,9 @@ test('the provider settles on an aborted lookup without reading the tree', async
   const controller = new AbortController()
   controller.abort()
 
-  assert.deepEqual(await provider.list({ signal: controller.signal }), [])
+  assert.deepEqual(candidatesOf(await provider.list({ signal: controller.signal })), [])
 
-  const candidates = await provider.list()
+  const candidates = candidatesOf(await provider.list())
   const first = candidates[0]
   assert.ok(first)
   assert.equal(await provider.get(first, { signal: controller.signal }), undefined)
@@ -336,13 +337,13 @@ test('a repeated provider list reuses one discovery instead of re-reading the tr
   // the band is loose because a loaded machine may bill more per call, and the
   // uncached shape is ~100x higher, so the guard survives the noise.
   const provider = createSkillProvider({ skillsDir })
-  await provider.list()
+  candidatesOf(await provider.list())
 
   const calls = 3000
   const budget = 120_000 // microseconds: recorded p50 was 7ms for this workload
   const before = process.cpuUsage()
   let last: readonly unknown[] = []
-  for (let i = 0; i < calls; i += 1) last = await provider.list()
+  for (let i = 0; i < calls; i += 1) last = candidatesOf(await provider.list())
   const used = process.cpuUsage(before)
   const perCall = (used.user + used.system) / calls
 

@@ -1,3 +1,4 @@
+import { candidatesOf } from './scratch.ts'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ToolDefinition, ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -150,7 +151,7 @@ test('apply mounts the section, provider, tool, command, and settings namespace'
   assert.equal(host.captured.tools[0]?.name, 'ponytail')
   assert.equal(host.captured.commands[0]?.name, 'ponytail')
   assert.equal(host.captured.providers.length, 1)
-  assert.equal((await host.captured.providers[0]?.list())?.length, 6)
+  assert.equal((candidatesOf(await host.captured.providers[0]?.list()))?.length, 6)
 
   assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full\n\n/)
 })
