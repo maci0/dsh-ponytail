@@ -73,7 +73,7 @@ toggle" is left alone.
 | `off` | No injection. Normal behavior. | yes |
 
 The four persistable levels live in the `ponytail` settings namespace, so the
-card, the chip, the tool, and `/ponytail` always agree and the choice survives a
+card, the chip, the tool, and `/ponytail` agree and the choice survives a
 restart. `review` stays session-only because it is a review mode, not a level a
 deployment should start in; the tool and the command still accept it.
 
@@ -139,6 +139,8 @@ second copy.
 - **External subagents ignore it.** In-process children inherit the ruleset, but
   `subagent-claude-code` and `subagent-codex` spawn their own CLI with its own
   system prompt, and no harness extension point wraps a spawn.
+- **The card shows the settings document.** A session-local level (`review`, or
+  any level kept when the settings write fails) never reaches the card or the chip.
 - **Two locales.** The card and the chip ship `en` and `zh`; any other locale
   falls back through the service's own chain.
 - **Host source edits need `npm run build` and a restart**, because the Loader
