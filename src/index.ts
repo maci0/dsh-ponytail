@@ -51,11 +51,6 @@ import type {
 export const name = 'ponytail'
 
 /**
- * Settings namespace the browser card edits — the join key between this host
- * half and `lib/client.js`. The card registers into `plugins.item`
- * under the same id, and the Plugins page pairs the two without knowing what it means.
- */
-/**
  * Configuration accepted from this plugin's row in a profile patch.
  *
  * The level is defaulted in the schema below, so the loader fills an absent
@@ -132,7 +127,8 @@ export function apply(ctx: HostContext, config: Config): void {
    * unloads, and a captured reference would then let a later write reach a
    * detached service.
    * @param next - the level to commit.
-   * @param signal - caller cancellation; an aborted call commits nothing.
+   * @param signal - caller cancellation; an abort during the write stops the
+   * wait, and the write itself still lands.
    * @returns whether the document accepted the level.
    */
   const persist = async (next: PonytailMode, signal?: AbortSignal): Promise<boolean> => {

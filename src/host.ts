@@ -115,7 +115,6 @@ export interface HostContext {
   readonly commands: {
     register(definition: CommandDefinitionLike): Disposable
   }
-  readonly settings: SettingsServiceLike
 }
 
 /** The slice of the settings service this plugin uses. */
