@@ -1,14 +1,12 @@
 # dsh-ponytail
 
 Your agent adds a cache class, a config flag, and a factory for one product. This
-plugin makes it stop and write the one line that works instead.
-
-The ladder: question whether the thing needs to exist, reuse what is already in
-the repo, then the standard library, then the platform, then an installed
-dependency, then one line. Stop at the first rung that holds.
-
-Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT).
-"He says nothing. He writes one line. It works."
+plugin makes it stop and write the one line that works instead. The ladder:
+question whether the thing needs to exist, reuse what is already in the repo, then
+the standard library, then the platform, then an installed dependency, then one
+line. Stop at the first rung that holds. Adapted from
+[DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT): "He
+says nothing. He writes one line. It works."
 
 ## What you get
 
@@ -29,23 +27,16 @@ Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytai
 > **Install it as a bundle.** `dsh plugin add …` mounts the row from the
 > package's own patch layer, which is what the settings editor can write to. A
 > row added with `--patch` is an overlay: it disappears at the next start, and
-> the Plugins card cannot save into it — the editor refuses a write an overlay
-> would win.
+> the Plugins card cannot save into it (the editor refuses a write an overlay
+> would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-ponytail   # untagged spec tracks main
+dsh plugin --profile web add github:maci0/dsh-ponytail#v0.15.0
 ```
 
-The package declares `dsh.bundle`, so `dsh plugin add` appends it to
-`dsh.profile.bundles` and the row in its own `cordis.patch.yml` applies as a
-layer. Bundle layers compose at boot, so **restart `dsh web`**. To pick up a newer
-commit later, run `dsh plugin --profile web update dsh-ponytail` and restart again.
+Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
 
-Do **not** also paste that `id: ponytail` row into your profile's own
-`cordis.patch.yml`: `insert` does not dedupe ids, and a second row mounts the
-plugin twice.
-
-## Try it
+## Use it
 
 ```
 /ponytail ultra   -> Ponytail level: ultra (was full).
@@ -67,18 +58,18 @@ persists a level, and calling it with no argument reports the current one.
 
 Typing **stop ponytail** or **normal mode** as an ordinary message has the same
 effect as `/ponytail off`, and it lands on the turn that carried it. Only the
-human's own words count — injected context riding the same event stream cannot
-toggle the level, and the message must *be* the command: "add a normal mode
+human's own words count: injected context riding the same event stream cannot
+toggle the level, and the message must *be* the command, so "add a normal mode
 toggle" is left alone.
 
-## Levels
+### Levels
 
 | Level | Behavior | Persisted |
 |---|---|---|
 | `lite` | Build what was asked, name the lazier alternative in one line. | yes |
 | `full` | The ladder enforced. Default. | yes |
 | `ultra` | YAGNI extremist: challenge the requirement before building it. | yes |
-| `review` | Over-engineering review; points at the `ponytail-review` skill. | no — session only |
+| `review` | Over-engineering review; points at the `ponytail-review` skill. | no, session only |
 | `off` | No injection. Normal behavior. | yes |
 
 The four persistable levels live in the `ponytail` settings namespace, so the
@@ -111,9 +102,16 @@ whole `config`):
     defaultMode: !!js process.env.PONYTAIL_DEFAULT_MODE ?? 'full'
 ```
 
+Override the row this way; do **not** paste the bundle's `insert` of the
+`id: ponytail` row into your profile's `cordis.patch.yml`: `insert` does not
+dedupe ids, and a second row mounts the plugin twice.
+
 ## How it works
 
-The host half mounts through public Cordis extension points — `systemPrompt.section`,
+The package declares `dsh.bundle`, so `dsh plugin add` appends it to
+`dsh.profile.bundles` and the row in its own `cordis.patch.yml` applies as a layer.
+
+The host half mounts through public Cordis extension points: `systemPrompt.section`,
 `skills.registerProvider`, `tools.register`, `commands.register`,
 `loader/volatile-update` (the settings document writes the row's volatile
 `defaultMode`), and `session/event` for the message switch. The browser half draws
@@ -122,7 +120,7 @@ copy through `locale.register`, and draws its chip into `conversation.input.left
 this plugin needs no client change of its own.
 
 The entry point is the built `lib/index.js` (declarations in `lib/types/`); `npm run
-build` regenerates it from `src/`. `lib/client.js` is hand-authored plain JavaScript —
+build` regenerates it from `src/`. `lib/client.js` is hand-authored plain JavaScript:
 the client module system serves it as a lazy-CJS factory on `window.__ModuleLoader__`
 because the package exports `./client`, and it is not built. Skills come from
 `skills/<name>/SKILL.md` with frontmatter parsed by `yaml`; the provider takes its rank
@@ -132,7 +130,7 @@ and name grammar from `@deepseek-ai/dsh-skill`, projects `disable-model-invocati
 `skills/ponytail/SKILL.md` is the source of truth for the ruleset; this README keeps no
 second copy.
 
-## What it does not do
+## Limits
 
 - **It does not skip comprehension.** The ladder shortens the solution, never the
   reading. The skill says so in its own text.
@@ -152,11 +150,14 @@ second copy.
 ## Development
 
 ```sh
-npm install         # real install
+npm install         # .npmrc sets legacy-peer-deps for the optional client peers
 npm run build       # tsc -p tsconfig.build.json -> lib/index.js + lib/types/
 npm test            # node --test tests/*.test.ts (Node ^22.19 || >=24, no build step)
 npm run typecheck   # tsc -p tsconfig.json
 ```
+
+For local development, install the checkout into a profile with
+`dsh plugin --profile <name> add <path-to-checkout>`.
 
 The suite covers level normalization and filtering, the fake-host surface, the skills
 provider, the client card, and a real Cordis composition mount next to the real skill
@@ -170,6 +171,6 @@ MIT. Skill content and mode semantics: © DietrichGebert
 
 The six `skills/*/SKILL.md` files are verbatim copies, so they carry upstream's figures
 and citations rather than this package's. `/ponytail-gain` therefore reports the original
-five-task single-shot benchmark — 80–94% fewer lines, 47–77% cheaper, 3–6× faster —
+five-task single-shot benchmark (80–94% fewer lines, 47–77% cheaper, 3–6× faster),
 which upstream's own README has since revised to roughly 54% fewer lines, 20% cheaper
 and 27% faster on its agentic benchmark.
