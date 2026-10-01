@@ -75,7 +75,10 @@ toggle" is left alone.
 The four persistable levels live in the `ponytail` settings namespace, so the
 card, the chip, the tool, and `/ponytail` agree and the choice survives a
 restart. `review` stays session-only because it is a review mode, not a level a
-deployment should start in; the tool and the command still accept it.
+deployment should start in; the tool and the command still accept it. The card
+and the chip show the level the host is using, so they show `review`, and any level
+kept only for this session because the settings write failed, labelled as
+session-only.
 
 Lazy is not negligent. Understanding the problem, trust-boundary validation,
 data-loss handling, security, and accessibility are never on the chopping block.
@@ -114,8 +117,10 @@ The package declares `dsh.bundle`, so `dsh plugin add` appends it to
 The host half mounts through public Cordis extension points: `systemPrompt.section`,
 `skills.registerProvider`, `tools.register`, `commands.register`,
 `loader/volatile-update` (the settings document writes the row's volatile
-`defaultMode`), and `session/event` for the message switch. The browser half draws
-its card into the public `plugins.row.config` slot from `configForms`, registers its
+`defaultMode`), `session/event` for the message switch, and `webServer` for
+`GET /ponytail/level`, which answers `{ mode, source }` (`settings` or `session`)
+behind the `connection` trust fence. The browser half reads that route on every
+settings change and every 5 seconds, draws its card into the public `plugins.row.config` slot from `configForms`, registers its
 copy through `locale.register`, and draws its chip into `conversation.input.left`, so
 this plugin needs no client change of its own.
 
@@ -139,8 +144,6 @@ second copy.
 - **External subagents ignore it.** In-process children inherit the ruleset, but
   `subagent-claude-code` and `subagent-codex` spawn their own CLI with its own
   system prompt, and no harness extension point wraps a spawn.
-- **The card shows the settings document.** A session-local level (`review`, or
-  any level kept when the settings write fails) never reaches the card or the chip.
 - **Two locales.** The card and the chip ship `en` and `zh`; any other locale
   falls back through the service's own chain.
 - **Host source edits need `bun run build` and a restart**, because the Loader
