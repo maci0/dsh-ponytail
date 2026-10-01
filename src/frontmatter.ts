@@ -3,8 +3,8 @@
  *
  * A frontmatter block is dominated by one shape: a flat mapping of
  * `key: value` entries carrying plain, quoted, or block scalars. This module
- * reads that shape by hand, because the alternative — handing every block to
- * `yaml` — pulls the whole parser into the boot path of the plugin, where it is
+ * reads that shape by hand, because the alternative (handing every block to
+ * `yaml`) pulls the whole parser into the boot path of the plugin, where it is
  * the single largest cost of mounting. Anything the reader cannot prove it
  * would transcribe exactly is handed to `yaml`, the same parser the upstream
  * filesystem provider uses, through a dynamic `import`, so this reader accepts
@@ -63,8 +63,8 @@ const TYPED_WORDS: ReadonlyMap<string, unknown> = new Map([
 /**
  * Plain scalars this reader returns verbatim. The leading character rules out
  * every typed form above; the character set excludes the indicators that change
- * how the line is read — `:` opening a nested value, `#` after a space opening
- * a comment, tabs, quotes, and flow brackets — so a match is always literal
+ * how the line is read (`:` opening a nested value, `#` after a space opening
+ * a comment, tabs, quotes, and flow brackets), so a match is always literal
  * text.
  */
 const PLAIN_TEXT = /^[A-Za-z_][A-Za-z0-9 _.'()/,-]*$/
@@ -102,7 +102,7 @@ function loadYaml(): Promise<typeof import('yaml')> {
  * Split a document into its frontmatter block and the body that follows it.
  *
  * Pure text, no parsing: the body is the same either way, so a caller that
- * needs only the body — the always-on ruleset, read once at mount — never
+ * needs only the body (the always-on ruleset, read once at mount) never
  * touches a parser at all.
  * @param source - full file contents.
  * @returns the block's lines and the remaining body.
@@ -151,10 +151,10 @@ async function parseBlock(block: string): Promise<Record<string, unknown>> {
  * Read the flat-mapping shape this module understands.
  *
  * Every construct that is not a top-level `key: value` entry with a scalar
- * value — an indented line, an unindented scalar, a duplicate key (which
+ * value (an indented line, an unindented scalar, a duplicate key (which
  * `yaml` rejects), a `__proto__` key (which would set a prototype), a carriage
  * return anywhere (a line break to `yaml`, and one the delimiter regex never
- * promised to place), or a value shape below —
+ * promised to place), or a value shape below)
  * returns `undefined` so the caller hands the whole block to `yaml`.
  */
 function readFlatBlock(block: string): Record<string, unknown> | undefined {

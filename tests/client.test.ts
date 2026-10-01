@@ -180,7 +180,7 @@ test('the summary is the live level line and the page is the level picker', () =
 
   const component = componentFor(registered, 'plugins.row.config')
   react.reset()
-  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode — level: Lite.')
+  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode, level: Lite.')
 
   const tree = page(react, component)
   assert.equal(tree.filter((element) => element.type === 'li').length, 0)
@@ -218,7 +218,7 @@ test('an overridden level is called out and offers a reset', () => {
   const open = page(react, component)
 
   react.reset()
-  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode — level: Ultra (overridden).')
+  assert.equal(component({ view: 'summary' }), 'Lazy senior dev mode, level: Ultra (overridden).')
 
   const reset = buttons(open).find((button) => button.children[0] === 'Reset')
   assert.ok(reset, 'the reset control renders while the field is overridden')

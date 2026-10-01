@@ -65,7 +65,7 @@ test('parseFrontmatter handles CRLF files', async () => {
   assert.equal(parsed.data['description'], 'y')
   assert.equal(parsed.body, 'body\n')
 
-  // CRLF delimiters alone are not enough — an unterminated block keeps the
+  // CRLF delimiters alone are not enough: an unterminated block keeps the
   // whole source as the body.
   const unterminated = await parseFrontmatter('---\r\nname: x\r\n')
   assert.deepEqual(unterminated.data, {})
