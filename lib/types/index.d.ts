@@ -1,5 +1,5 @@
 /**
- * dsh-ponytail — Ponytail, lazy senior dev mode, as a DeepSeek Harness plugin.
+ * dsh-ponytail: Ponytail, lazy senior dev mode, as a DeepSeek Harness plugin.
  *
  * Four capabilities, all mounted through public Cordis extension points:
  *

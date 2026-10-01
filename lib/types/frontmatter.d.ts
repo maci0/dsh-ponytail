@@ -3,8 +3,8 @@
  *
  * A frontmatter block is dominated by one shape: a flat mapping of
  * `key: value` entries carrying plain, quoted, or block scalars. This module
- * reads that shape by hand, because the alternative — handing every block to
- * `yaml` — pulls the whole parser into the boot path of the plugin, where it is
+ * reads that shape by hand, because the alternative (handing every block to
+ * `yaml`) pulls the whole parser into the boot path of the plugin, where it is
  * the single largest cost of mounting. Anything the reader cannot prove it
  * would transcribe exactly is handed to `yaml`, the same parser the upstream
  * filesystem provider uses, through a dynamic `import`, so this reader accepts
@@ -27,7 +27,7 @@ interface Frontmatter {
  * Split a document into its frontmatter block and the body that follows it.
  *
  * Pure text, no parsing: the body is the same either way, so a caller that
- * needs only the body — the always-on ruleset, read once at mount — never
+ * needs only the body (the always-on ruleset, read once at mount) never
  * touches a parser at all.
  * @param source - full file contents.
  * @returns the block's lines and the remaining body.

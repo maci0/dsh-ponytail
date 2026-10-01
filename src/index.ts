@@ -1,5 +1,5 @@
 /**
- * dsh-ponytail — Ponytail, lazy senior dev mode, as a DeepSeek Harness plugin.
+ * dsh-ponytail: Ponytail, lazy senior dev mode, as a DeepSeek Harness plugin.
  *
  * Four capabilities, all mounted through public Cordis extension points:
  *
@@ -161,7 +161,7 @@ export function apply(ctx: HostContext, config: Config): void {
    * The override is set before the settings write is awaited: the durable
    * `user/message` event arrives before the turn's prompt is assembled, and
    * awaiting the document would let that same turn assemble with the ruleset
-   * still injected — the one turn the user just asked to end. A committed
+   * still injected: the one turn the user just asked to end. A committed
    * document then becomes the source of truth again, so the card and the
    * prompt cannot disagree.
    */
