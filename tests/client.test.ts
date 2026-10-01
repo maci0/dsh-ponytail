@@ -91,14 +91,14 @@ interface Snapshot {
 }
 
 /** Load the bundle the way the client module system does and return its exports. */
-function loadBundle(snapshot: Snapshot, calls: { set: unknown[][]; unset: unknown[][] }, level?: unknown) {
+function loadBundle(snapshot: Snapshot, calls: { set: unknown[][]; unset: unknown[][] }, level?: unknown, accepted = true) {
   hostLevel = level
   const react = createReactStub()
   const scope = {
     subscribe: (): (() => void) => () => {},
     getSnapshot: (): Snapshot => snapshot,
-    set: async (field: string, value: unknown): Promise<void> => { calls.set.push([field, value]) },
-    unset: async (field: string): Promise<void> => { calls.unset.push([field]) },
+    set: async (field: string, value: unknown): Promise<boolean> => { calls.set.push([field, value]); return accepted },
+    unset: async (field: string): Promise<boolean> => { calls.unset.push([field]); return accepted },
   }
 
   // One dictionary per namespace, keyed by the locale the bundle registers
@@ -187,6 +187,17 @@ function buttons(tree: Element[]): Element[] {
 function radios(tree: Element[]): Element[] {
   return tree.filter((element) => element.props['role'] === 'radio')
 }
+
+test('refused level and reset writes are reported', async () => {
+  const { registered, react } = loadBundle({ status: 'ready', value: { defaultMode: 'full' }, user: { defaultMode: 'full' }, writable: true }, { set: [], unset: [] }, undefined, false)
+  const component = componentFor(registered, 'plugins.row.config')
+  for (const label of ['Lite', 'Reset']) {
+    const button = buttons(render(react, component)).find(button => button.children[0] === label)
+    ;(button?.props['onClick'] as () => void)()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.match(JSON.stringify(render(react, component)), /refused/i)
+  }
+})
 
 /** Render the row configuration page. */
 function page(react: ReactStub, component: (props?: { view?: string }) => Element | string | null): Element[] {
