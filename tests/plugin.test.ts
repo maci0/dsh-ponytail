@@ -20,11 +20,12 @@ interface Captured {
   readonly tools: ToolDefinition[]
   readonly commands: CommandDefinitionLike[]
   readonly updates: { namespace: string; patch: Record<string, unknown> }[]
+  readonly routes: { kind: string; path: string; handler: (req: unknown, res: unknown) => unknown }[]
 }
 
 /** A host that records registrations and emulates the settings document. */
 function createHost(
-  options: { failUpdate?: boolean; detachSettings?: boolean; updateDelayMs?: number } = {},
+  options: { failUpdate?: boolean; detachSettings?: boolean; updateDelayMs?: number; rejectRequests?: 401 | 403 } = {},
 ): {
   ctx: HostContext
   captured: Captured
@@ -34,7 +35,7 @@ function createHost(
   emitVolatile: () => void
 } {
   const captured: Captured = {
-    sections: [], providers: [], tools: [], commands: [], updates: [],
+    sections: [], providers: [], tools: [], commands: [], updates: [], routes: [],
   }
   const row: { defaultMode: RuntimeMode } = { defaultMode: 'full' }
   // The loader hands `apply` a reference, not a value: this double is what the
@@ -77,6 +78,15 @@ function createHost(
         if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode'] as RuntimeMode
       },
     },
+    webServer: {
+      register: (route: Captured['routes'][number]): (() => void) => {
+        captured.routes.push(route)
+        return () => {}
+      },
+    },
+    connection: {
+      requestRejection: (): 401 | 403 | undefined => options.rejectRequests,
+    },
   }
 
   const listeners: Array<(session: unknown, event: SessionEventLike) => void> = []
@@ -86,6 +96,7 @@ function createHost(
     // The real service disappears from `ctx.get` while its provider is unloaded;
     // `detachSettings` reproduces that without disposing the whole context.
     fiber: { entry: { options: { id: PONYTAIL_SETTINGS_NAMESPACE } } },
+    effect: (callback: () => unknown): void => { callback() },
     get: (service: string): unknown =>
       (service === 'settings' && options.detachSettings === true ? undefined : (services as Record<string, unknown>)[service]),
     inject: (_dependencies: readonly string[], callback: (scope: HostContext) => void): void => {
@@ -369,4 +380,45 @@ test('an already-off level is not written again', async () => {
   await settle()
 
   assert.deepEqual(host.captured.updates, [])
+})
+
+/** Run the host half's level route once and collect what it answered. */
+async function callLevelRoute(host: { captured: Captured }): Promise<{ status: number; type?: string; body: string }> {
+  const route = host.captured.routes.find((candidate) => candidate.path === '/ponytail/level')
+  assert.ok(route, 'the host half registers GET /ponytail/level')
+  assert.equal(route.kind, 'exact')
+  const headers: Record<string, string> = {}
+  const res = {
+    statusCode: 200,
+    body: '',
+    setHeader: (name: string, value: string): void => { headers[name.toLowerCase()] = value },
+    end: (body?: string): void => { res.body = body ?? '' },
+  }
+  await route.handler({ method: 'GET', url: '/ponytail/level', headers: {} }, res)
+  return { status: res.statusCode, ...(headers['content-type'] === undefined ? {} : { type: headers['content-type'] }), body: res.body }
+}
+
+test('the level route reports the level in use and whether only this session holds it', async () => {
+  const host = createHost()
+  apply(host.ctx, host.config)
+
+  const fromRow = await callLevelRoute(host)
+  assert.equal(fromRow.status, 200)
+  assert.equal(fromRow.type, 'application/json; charset=utf-8')
+  assert.deepEqual(JSON.parse(fromRow.body), { mode: 'full', source: 'settings' })
+
+  // `review` never persists, so it lives only in this process.
+  await callCommand(host, 'review')
+  assert.deepEqual(JSON.parse((await callLevelRoute(host)).body), { mode: 'review', source: 'session' })
+
+  await callCommand(host, 'lite')
+  assert.deepEqual(JSON.parse((await callLevelRoute(host)).body), { mode: 'lite', source: 'settings' })
+})
+
+test('the level route answers an untrusted request with the trust fence status', async () => {
+  const host = createHost({ rejectRequests: 403 })
+  apply(host.ctx, host.config)
+  const answer = await callLevelRoute(host)
+  assert.equal(answer.status, 403)
+  assert.equal(answer.body, '')
 })

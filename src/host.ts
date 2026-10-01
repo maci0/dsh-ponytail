@@ -96,6 +96,8 @@ export interface SessionEventLike {
 export interface HostContext {
   /** Run `callback` once the named services are available; the return is a fiber. */
   inject(dependencies: readonly string[], callback: (scope: HostContext) => void): unknown
+  /** Bind a registration's disposer to the calling fiber. */
+  effect(callback: () => Disposable, label?: string): unknown
   /** Query a mounted service, or `undefined` while none is mounted. */
   get(service: string): unknown
   /** Subscribe to a host event; the returned disposer removes the listener. */
@@ -115,6 +117,37 @@ export interface HostContext {
   readonly commands: {
     register(definition: CommandDefinitionLike): Disposable
   }
+  readonly webServer: WebServerLike
+  readonly connection: ConnectionLike
+}
+
+/** The slice of an incoming HTTP request the level route reads. */
+export interface RequestLike {
+  readonly method?: string | undefined
+  readonly headers: object | undefined
+}
+
+/** The slice of an HTTP response the level route writes. */
+export interface ResponseLike {
+  statusCode: number
+  setHeader(name: string, value: string): void
+  end(body?: string): void
+}
+
+/** The slice of the `webServer` service this plugin registers on. */
+export interface WebServerLike {
+  /** Register one route; a duplicate path throws. */
+  register(route: {
+    readonly kind: 'exact'
+    readonly path: string
+    handler(req: RequestLike, res: ResponseLike): void | Promise<void>
+  }): Disposable
+}
+
+/** The composition's trust fence for HTTP requests. */
+export interface ConnectionLike {
+  /** The rejection status for an untrusted or unauthenticated request, else `undefined`. */
+  requestRejection(request: { readonly headers: object | undefined }): 401 | 403 | undefined
 }
 
 /** The slice of the settings service this plugin uses. */

@@ -133,7 +133,9 @@ test('the injected section reuses one filtered ruleset per level', { timeout: 12
     },
   }
   const ctx = {
+    // Like Cordis, a callback runs only once every service it names is mounted.
     inject: (deps: readonly string[], callback: (scope: unknown) => void) => {
+      if (!deps.every((dep) => dep in services)) return () => {}
       const scope: Record<string, unknown> = { ...ctx }
       for (const dep of deps) scope[dep] = services[dep]
       callback(scope)
