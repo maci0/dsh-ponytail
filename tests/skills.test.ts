@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { scratchDir } from './scratch.ts'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -121,7 +121,7 @@ test('parseFrontmatter leaves a malformed block with no keys', async () => {
 })
 
 test('discoverSkills reports and skips a file with no usable description', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ponytail-skills-'))
+  const root = await mkdtemp(join(scratchDir, 'ponytail-skills-'))
   try {
     // A nested map where a scalar belongs: `yaml` parses it, and the summary
     // has no description to route on.
@@ -166,7 +166,7 @@ test('discoverSkills reads every bundled skill with a usable description', async
 })
 
 test('discoverSkills reports a directory with no instruction file', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ponytail-nofile-'))
+  const root = await mkdtemp(join(scratchDir, 'ponytail-nofile-'))
   try {
     await mkdir(join(root, 'empty'), { recursive: true })
 
@@ -219,7 +219,7 @@ test('the provider lists candidates and loads their bodies', async () => {
 })
 
 test('a skill named only by its directory loads under that name', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ponytail-dirname-'))
+  const root = await mkdtemp(join(scratchDir, 'ponytail-dirname-'))
   try {
     await mkdir(join(root, 'my-skill'), { recursive: true })
     await writeFile(
@@ -246,7 +246,7 @@ test('a skill named only by its directory loads under that name', async () => {
 })
 
 test('the provider projects the invocation policy and whenToUse', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ponytail-policy-'))
+  const root = await mkdtemp(join(scratchDir, 'ponytail-policy-'))
   try {
     await mkdir(join(root, 'model-off'), { recursive: true })
     await writeFile(
@@ -311,7 +311,7 @@ test('the provider settles on an aborted lookup without reading the tree', async
 })
 
 test('a skill whose frontmatter name breaks the grammar is skipped', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ponytail-name-'))
+  const root = await mkdtemp(join(scratchDir, 'ponytail-name-'))
   try {
     await mkdir(join(root, 'skill'), { recursive: true })
     await writeFile(
