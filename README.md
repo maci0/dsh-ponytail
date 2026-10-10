@@ -31,10 +31,12 @@ says nothing. He writes one line. It works."
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-ponytail#v0.18.2
+dsh plugin --profile web add github:maci0/dsh-ponytail#v0.18.3
 ```
 
-Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
+Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
+same command with the newer tag, then restart `dsh web` (bundle layers compose
+at boot).
 
 ## Use it
 
@@ -168,7 +170,7 @@ For local development, install the checkout into a profile with
 
 The suite covers level normalization and filtering, the fake-host surface, the skills
 provider, the client card, and a real Cordis composition mount next to the real skill
-registry. To uninstall, run `dsh plugin --profile web remove dsh-ponytail`; that removes
+registry. To uninstall, run `dsh plugin --profile web remove @maci0/dsh-ponytail`; that removes
 the dependency and the bundle layer together.
 
 ## Attribution and license

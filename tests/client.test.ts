@@ -142,7 +142,7 @@ function loadBundle(snapshot: Snapshot, calls: { set: unknown[][]; unset: unknow
   }
 
   assert.ok(loaded, 'the bundle registered itself on window.__ModuleLoader__')
-  assert.equal(loaded.id, 'dsh-ponytail')
+  assert.equal(loaded.id, '@maci0/dsh-ponytail')
 
   const exported = loaded.factory(requireFn)
   ;(exported['apply'] as (ctx: unknown) => void)(ctx)
@@ -217,7 +217,7 @@ test('the card binds the ponytail namespace and registers into the plugins tab',
   assert.deepEqual(registeredLocales, ['ponytail'])
   assert.equal(registered.length, 2)
   assert.equal(registered[0]?.entry['name'], 'plugins.row.config')
-  assert.equal(registered[0]?.entry['key'], 'dsh-ponytail#ponytail')
+  assert.equal(registered[0]?.entry['key'], '@maci0/dsh-ponytail#ponytail')
   // The slot contract's `locale` field: the namespace the framework binds the
   // card's `t` seat to, which is the dictionary registered above.
   assert.equal(registered[0]?.entry['locale'], 'ponytail')

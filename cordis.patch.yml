@@ -10,6 +10,6 @@
 # dedupe ids, and a second row would register the plugin twice.
 - insert:
     - id: ponytail
-      name: 'dsh-ponytail'
+      name: '@maci0/dsh-ponytail'
       config:
         defaultMode: full
