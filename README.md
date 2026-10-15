@@ -31,7 +31,7 @@ says nothing. He writes one line. It works."
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-ponytail#v0.18.3
+dsh plugin --profile web add github:maci0/dsh-ponytail#v0.18.4
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
