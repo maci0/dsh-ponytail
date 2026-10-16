@@ -31,12 +31,11 @@ says nothing. He writes one line. It works."
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-ponytail#v0.18.4
+dsh plugin --profile web add --save-exact @maci0/dsh-ponytail@0.19.0
 ```
 
-Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
-same command with the newer tag, then restart `dsh web` (bundle layers compose
-at boot).
+Pin an exact npm version. To upgrade, run the same command with the newer
+version, then restart `dsh web` (bundle layers compose at boot).
 
 ## Use it
 

@@ -26,7 +26,7 @@ interface Captured {
 
 /** A host that records registrations and emulates the settings document. */
 function createHost(
-  options: { failUpdate?: boolean; detachSettings?: boolean; updateDelayMs?: number; rejectRequests?: 401 | 403 } = {},
+  options: { failUpdate?: boolean; detachSettings?: boolean; updateGate?: Promise<void>; rejectRequests?: 401 | 403 } = {},
 ): {
   ctx: HostContext
   captured: Captured
@@ -72,9 +72,7 @@ function createHost(
     settings: {
       update: async (namespace: string, patch: Record<string, unknown>): Promise<void> => {
         if (options.failUpdate === true) throw new Error('settings document is read-only')
-        if (options.updateDelayMs !== undefined) {
-          await new Promise((resolve) => { setTimeout(resolve, options.updateDelayMs) })
-        }
+        if (options.updateGate !== undefined) await options.updateGate
         captured.updates.push({ namespace, patch })
         if (typeof patch['defaultMode'] === 'string') row.defaultMode = patch['defaultMode'] as RuntimeMode
       },
@@ -301,17 +299,25 @@ test('a detached settings service is not written to', async () => {
 })
 
 test('the tool settles when the caller aborts a slow settings write', async () => {
-  const host = createHost({ updateDelayMs: 50 })
+  let release!: () => void
+  const updateGate = new Promise<void>((resolve) => { release = resolve })
+  const host = createHost({ updateGate })
   apply(host.ctx, host.config)
 
   const controller = new AbortController()
   const pending = callTool(host, { mode: 'ultra' }, controller.signal)
   controller.abort()
 
-  const started = Date.now()
-  await assert.rejects(pending, /abort/i)
-  assert.ok(Date.now() - started < 40, 'the call settled before the write did')
-  assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full/)
+  try {
+    await Promise.race([
+      assert.rejects(pending, /abort/i),
+      new Promise<never>((_resolve, reject) => { setImmediate(() => reject(new Error('abort waited for the settings write'))) }),
+    ])
+    assert.equal(host.captured.updates.length, 0, 'the write is still held')
+    assert.match(sectionText(host.captured.sections[0]), /^PONYTAIL MODE ACTIVE — level: full/)
+  } finally {
+    release()
+  }
 })
 
 /** Let the fire-and-forget settings write settle. */
