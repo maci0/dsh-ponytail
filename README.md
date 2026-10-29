@@ -24,7 +24,7 @@ says nothing. He writes one line. It works."
 
 ## Install
 
-Requires DeepSeek Harness `>=0.2.1-rc.2 <0.3.0`. Restart DSH and refresh the browser after upgrading.
+Requires DeepSeek Harness `>=0.2.2-alpha.2 <0.3.0`. Restart DSH and refresh the browser after upgrading.
 
 > **Install it as a bundle.** `dsh plugin add …` mounts the row from the
 > package's own patch layer, which is what the settings editor can write to. A
@@ -33,7 +33,7 @@ Requires DeepSeek Harness `>=0.2.1-rc.2 <0.3.0`. Restart DSH and refresh the bro
 > would win).
 
 ```sh
-dsh plugin --profile web add --save-exact @maci0/dsh-ponytail@0.20.0
+dsh plugin --profile web add --save-exact @maci0/dsh-ponytail@0.20.1
 ```
 
 Pin an exact npm version. To upgrade, run the same command with the newer
