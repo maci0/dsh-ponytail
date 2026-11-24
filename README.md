@@ -33,7 +33,7 @@ Requires DeepSeek Harness `>=0.2.2-rc.4 <0.3.0`. Restart DSH and refresh the bro
 > would win).
 
 ```sh
-dsh plugin --profile web add --save-exact @maci0/dsh-ponytail@0.20.3
+dsh plugin --profile web add --save-exact @maci0/dsh-ponytail@0.20.4
 ```
 
 Pin an exact npm version. To upgrade, run the same command with the newer

@@ -26,7 +26,7 @@ interface Captured {
 
 /** A host that records registrations and emulates the settings document. */
 function createHost(
-  options: { failUpdate?: boolean; detachSettings?: boolean; updateGate?: Promise<void>; rejectRequests?: 401 | 403 } = {},
+  options: { failUpdate?: boolean; detachSettings?: boolean; updateGate?: Promise<void>; rejectRequests?: 401 | 403; fenceless?: boolean } = {},
 ): {
   ctx: HostContext
   captured: Captured
@@ -83,7 +83,7 @@ function createHost(
         return () => {}
       },
     },
-    connection: {
+    connection: options.fenceless === true ? {} : {
       requestRejection: (): 401 | 403 | undefined => options.rejectRequests,
     },
   }
@@ -428,6 +428,14 @@ test('the level route answers an untrusted request with the trust fence status',
   const answer = await callLevelRoute(host)
   assert.equal(answer.status, 403)
   assert.equal(answer.body, '')
+})
+
+test('without the connection fence the level route leaves admission to the web server', async () => {
+  const host = createHost({ fenceless: true })
+  apply(host.ctx, host.config)
+  assert.equal((await callLevelRoute(host)).status, 200)
+  const route = host.captured.routes[0] as { auth?: unknown }
+  assert.equal(route.auth ?? 'required', 'required', 'the route must not opt out of web server authentication')
 })
 
 
